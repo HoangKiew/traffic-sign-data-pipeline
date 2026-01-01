@@ -1,0 +1,53 @@
+# Project Configuration
+
+project:
+  name: "Traffic Sign Data Pipeline"
+  description: "Thu thập và phân loại biển báo giao thông"
+
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  metadata_file: "data/metadata.csv"
+  
+  # Categories
+  categories:
+    - prohibitory    # Biển cấm
+    - warning        # Biển cảnh báo
+    - mandatory      # Biển hiệu lệnh
+    - informative    # Biển chỉ dẫn
+
+preprocessing:
+  target_size: [64, 64]
+  normalize: true
+  augmentation:
+    rotation_range: 15
+    brightness_range: [0.8, 1.2]
+    horizontal_flip: false
+    zoom_range: 0.1
+
+split:
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  random_seed: 42
+
+model:
+  type: "transfer_learning"  # or "simple_cnn"
+  input_shape: [64, 64, 3]
+  learning_rate: 0.001
+  batch_size: 32
+  epochs: 50
+  
+training:
+  early_stopping:
+    patience: 10
+    monitor: "val_loss"
+  
+  model_checkpoint:
+    monitor: "val_accuracy"
+    save_best_only: true
+
+output:
+  models_dir: "models/saved_models"
+  reports_dir: "reports"
+  figures_dir: "reports/figures"

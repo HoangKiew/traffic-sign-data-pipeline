@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data files (quá lớn, không push lên Git)
+data/raw/*.jpg
+data/raw/*.png
+data/processed/*.jpg
+data/processed/*.png
+
+# Nhưng giữ lại cấu trúc thư mục
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Models (file model quá lớn)
+models/saved_models/*.h5
+models/saved_models/*.keras
+!models/saved_models/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+
+# Artifacts (không cần push)
+.gemini/
