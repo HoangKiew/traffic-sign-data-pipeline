@@ -1,6 +1,7 @@
 """
 Data Cleaning Module
 Xử lý và làm sạch dữ liệu theo workflow trong slide
+Bổ sung: MD5 Hash và Perceptual Hash để phát hiện duplicates & similar images
 """
 
 import pandas as pd
@@ -8,6 +9,14 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 import os
+import hashlib
+
+try:
+    import imagehash
+    HAS_IMAGEHASH = True
+except ImportError:
+    HAS_IMAGEHASH = False
+    print("⚠️  imagehash chưa cài đặt. Chạy: pip install imagehash")
 
 
 class DataCleaner:
@@ -52,6 +61,112 @@ class DataCleaner:
         self.df = pd.DataFrame(data)
         print(f"✓ Đã tạo metadata cho {len(self.df)} images")
         return self.df
+    
+    def add_md5_hash(self):
+        """
+        Thêm MD5 hash để phát hiện exact duplicates
+        """
+        print("\n🔐 Đang tính MD5 hash...")
+        
+        def get_md5(img_path):
+            try:
+                with open(img_path, 'rb') as f:
+                    return hashlib.md5(f.read()).hexdigest()
+            except:
+                return None
+        
+        self.df['md5_hash'] = self.df['image_path'].apply(get_md5)
+        print(f"✓ Đã tính MD5 hash cho {len(self.df)} images")
+    
+    def add_perceptual_hash(self):
+        """
+        Thêm Perceptual hash để phát hiện similar images
+        Cần cài: pip install imagehash
+        """
+        if not HAS_IMAGEHASH:
+            print("⚠️  Bỏ qua Perceptual hash (chưa cài imagehash)")
+            return
+        
+        print("\n🎨 Đang tính Perceptual hash...")
+        
+        def get_phash(img_path):
+            try:
+                img = Image.open(img_path)
+                return str(imagehash.average_hash(img))
+            except:
+                return None
+        
+        self.df['phash'] = self.df['image_path'].apply(get_phash)
+        print(f"✓ Đã tính Perceptual hash cho {len(self.df)} images")
+    
+    def find_exact_duplicates(self):
+        """
+        Tìm ảnh trùng lặp hoàn toàn bằng MD5 hash
+        """
+        if 'md5_hash' not in self.df.columns:
+            print("⚠️  Chưa có MD5 hash. Gọi add_md5_hash() trước.")
+            return []
+        
+        print("\n🔍 Tìm exact duplicates (MD5)...")
+        duplicates = self.df[self.df.duplicated(subset=['md5_hash'], keep=False)]
+        
+        if len(duplicates) == 0:
+            print("✓ Không có ảnh trùng lặp")
+        else:
+            print(f"⚠️  Tìm thấy {len(duplicates)} ảnh trùng lặp:")
+            for hash_val, group in duplicates.groupby('md5_hash'):
+                print(f"  Hash {hash_val[:8]}...:")
+                for _, row in group.iterrows():
+                    print(f"    - {row['filename']}")
+        
+        return duplicates
+    
+    def find_similar_images(self, threshold=5):
+        """
+        Tìm ảnh tương tự bằng Perceptual hash
+        threshold: 0-5 = rất tương tự, 6-10 = tương tự, 11+ = khác
+        """
+        if not HAS_IMAGEHASH or 'phash' not in self.df.columns:
+            print("⚠️  Không thể tìm similar images (chưa có phash)")
+            return []
+        
+        print(f"\n🔎 Tìm similar images (threshold={threshold})...")
+        
+        similar_groups = []
+        processed = set()
+        
+        for i, row1 in self.df.iterrows():
+            if i in processed or pd.isna(row1['phash']):
+                continue
+            
+            group = [i]
+            hash1 = imagehash.hex_to_hash(row1['phash'])
+            
+            for j, row2 in self.df.iterrows():
+                if i >= j or j in processed or pd.isna(row2['phash']):
+                    continue
+                
+                hash2 = imagehash.hex_to_hash(row2['phash'])
+                distance = hash1 - hash2
+                
+                if distance <= threshold:
+                    group.append(j)
+                    processed.add(j)
+            
+            if len(group) > 1:
+                similar_groups.append(group)
+        
+        if len(similar_groups) == 0:
+            print("✓ Không có ảnh tương tự")
+        else:
+            print(f"⚠️  Tìm thấy {len(similar_groups)} nhóm ảnh tương tự:")
+            for i, group in enumerate(similar_groups, 1):
+                print(f"  Nhóm {i}:")
+                for idx in group:
+                    row = self.df.iloc[idx]
+                    print(f"    - {row['filename']} ({row['width']}x{row['height']})")
+        
+        return similar_groups
     
     def analyze_data(self):
         """
@@ -146,9 +261,18 @@ class DataCleaner:
         
         original_size = len(self.df)
         
-        # Remove duplicates
+        # Remove duplicates by filename
+        before_dup = len(self.df)
         self.df = self.df.drop_duplicates(subset=['filename'])
-        print(f"✓ Đã loại bỏ {original_size - len(self.df)} duplicates")
+        print(f"✓ Đã loại bỏ {before_dup - len(self.df)} duplicates (by filename)")
+        
+        # Remove exact duplicates by MD5 (nếu có)
+        if 'md5_hash' in self.df.columns:
+            before_md5 = len(self.df)
+            self.df = self.df.drop_duplicates(subset=['md5_hash'], keep='first')
+            removed_md5 = before_md5 - len(self.df)
+            if removed_md5 > 0:
+                print(f"✓ Đã loại bỏ {removed_md5} exact duplicates (by MD5)")
         
         # Remove ảnh quá nhỏ
         before = len(self.df)
@@ -192,19 +316,27 @@ def main():
     # Step 1: Tạo metadata
     cleaner.create_metadata()
     
-    # Step 2: Phân tích dữ liệu (theo slide)
+    # Step 2: Thêm hash (MD5 + Perceptual)
+    cleaner.add_md5_hash()
+    cleaner.add_perceptual_hash()
+    
+    # Step 3: Tìm duplicates & similar
+    cleaner.find_exact_duplicates()
+    cleaner.find_similar_images(threshold=5)
+    
+    # Step 4: Phân tích dữ liệu (theo slide)
     cleaner.analyze_data()
     
-    # Step 3: Kiểm tra missing values
+    # Step 5: Kiểm tra missing values
     cleaner.check_missing_values()
     
-    # Step 4: Phát hiện outliers
+    # Step 6: Phát hiện outliers
     cleaner.detect_outliers()
     
-    # Step 5: Clean data
+    # Step 7: Clean data
     cleaner.clean_data(remove_outliers=False, min_size=32)
     
-    # Step 6: Lưu metadata
+    # Step 8: Lưu metadata
     cleaner.save_metadata()
     
     print("\n" + "="*60)
