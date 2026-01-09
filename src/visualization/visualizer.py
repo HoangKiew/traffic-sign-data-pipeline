@@ -27,7 +27,7 @@ class DataVisualizer:
         - Thống kê tổng quan
         """
         print("\n" + "="*60)
-        print("📊 BẢNG MÔ TẢ DỮ LIỆU")
+        print(" BẢNG MÔ TẢ DỮ LIỆU")
         print("="*60)
         
         summary = {
@@ -54,7 +54,7 @@ class DataVisualizer:
         category_counts = self.df['category'].value_counts()
         
         ax = category_counts.plot(kind='bar', color='steelblue', edgecolor='black')
-        plt.title('Phân bố số lượng ảnh theo Category', fontsize=16, fontweight='bold')
+        plt.title('Phan bo so luong anh theo Category', fontsize=16, fontweight='bold')
         plt.xlabel('Category', fontsize=12)
         plt.ylabel('Số lượng ảnh', fontsize=12)
         plt.xticks(rotation=45, ha='right')
@@ -64,7 +64,7 @@ class DataVisualizer:
             ax.text(i, v + 5, str(v), ha='center', fontweight='bold')
         
         plt.tight_layout()
-        output_path = self.output_dir / 'category_distribution.png'
+        output_path = self.output_dir / 'phan_bo_category.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Đã lưu: {output_path}")
         plt.close()
@@ -78,7 +78,7 @@ class DataVisualizer:
         
         # Width histogram
         axes[0].hist(self.df['width'], bins=30, color='skyblue', edgecolor='black')
-        axes[0].set_title('Phân bố Width', fontsize=14, fontweight='bold')
+        axes[0].set_title('Phan bo Width', fontsize=14, fontweight='bold')
         axes[0].set_xlabel('Width (pixels)', fontsize=11)
         axes[0].set_ylabel('Frequency', fontsize=11)
         axes[0].axvline(self.df['width'].mean(), color='red', linestyle='--', 
@@ -87,7 +87,7 @@ class DataVisualizer:
         
         # Height histogram
         axes[1].hist(self.df['height'], bins=30, color='lightcoral', edgecolor='black')
-        axes[1].set_title('Phân bố Height', fontsize=14, fontweight='bold')
+        axes[1].set_title('Phan bo Height', fontsize=14, fontweight='bold')
         axes[1].set_xlabel('Height (pixels)', fontsize=11)
         axes[1].set_ylabel('Frequency', fontsize=11)
         axes[1].axvline(self.df['height'].mean(), color='red', linestyle='--',
@@ -95,7 +95,7 @@ class DataVisualizer:
         axes[1].legend()
         
         plt.tight_layout()
-        output_path = self.output_dir / 'size_histogram.png'
+        output_path = self.output_dir / 'histogram_kich_thuoc.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Đã lưu: {output_path}")
         plt.close()
@@ -116,68 +116,82 @@ class DataVisualizer:
             plt.scatter(data['width'], data['height'], 
                        label=category, alpha=0.6, s=50, color=colors[i])
         
-        plt.title('Scatter Plot: Width vs Height', fontsize=16, fontweight='bold')
+        plt.title('Bieu do: Width vs Height', fontsize=16, fontweight='bold')
         plt.xlabel('Width (pixels)', fontsize=12)
         plt.ylabel('Height (pixels)', fontsize=12)
         plt.legend(title='Category')
         plt.grid(True, alpha=0.3)
         
         plt.tight_layout()
-        output_path = self.output_dir / 'scatter_width_height.png'
+        output_path = self.output_dir / 'bieu_do_width_height.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Đã lưu: {output_path}")
         plt.close()
     
     def plot_statistics(self):
         """
-        Biểu đồ thống kê: mean, median, std
-        Theo slide: "Báo cáo thống kê tổng quan (mean, median, std)"
+        Tạo 3 biểu đồ thống kê riêng biệt
         """
-        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        # 1. Box plots cho Width và Height
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
         
-        # 1. Box plot - Width
-        axes[0, 0].boxplot([self.df['width']], labels=['Width'])
-        axes[0, 0].set_title('Box Plot - Width', fontweight='bold')
-        axes[0, 0].set_ylabel('Pixels')
-        axes[0, 0].grid(True, alpha=0.3)
+        axes[0].boxplot([self.df['width']], tick_labels=['Width'])
+        axes[0].set_title('Box Plot - Width', fontweight='bold')
+        axes[0].set_ylabel('Pixels')
+        axes[0].grid(True, alpha=0.3)
         
-        # 2. Box plot - Height
-        axes[0, 1].boxplot([self.df['height']], labels=['Height'])
-        axes[0, 1].set_title('Box Plot - Height', fontweight='bold')
-        axes[0, 1].set_ylabel('Pixels')
-        axes[0, 1].grid(True, alpha=0.3)
-        
-        # 3. Statistics comparison
-        stats_data = {
-            'Width': [self.df['width'].mean(), self.df['width'].median(), self.df['width'].std()],
-            'Height': [self.df['height'].mean(), self.df['height'].median(), self.df['height'].std()]
-        }
-        stats_df = pd.DataFrame(stats_data, index=['Mean', 'Median', 'Std'])
-        
-        x = range(len(stats_df.index))
-        width = 0.35
-        axes[1, 0].bar([i - width/2 for i in x], stats_df['Width'], width, label='Width', color='skyblue')
-        axes[1, 0].bar([i + width/2 for i in x], stats_df['Height'], width, label='Height', color='lightcoral')
-        axes[1, 0].set_title('Thống kê: Mean, Median, Std', fontweight='bold')
-        axes[1, 0].set_xticks(x)
-        axes[1, 0].set_xticklabels(stats_df.index)
-        axes[1, 0].legend()
-        axes[1, 0].grid(True, alpha=0.3, axis='y')
-        
-        # 4. File size distribution
-        axes[1, 1].hist(self.df['size_kb'], bins=30, color='mediumseagreen', edgecolor='black')
-        axes[1, 1].set_title('Phân bố kích thước file', fontweight='bold')
-        axes[1, 1].set_xlabel('Size (KB)')
-        axes[1, 1].set_ylabel('Frequency')
-        axes[1, 1].axvline(self.df['size_kb'].mean(), color='red', linestyle='--',
-                          label=f'Mean: {self.df["size_kb"].mean():.1f}KB')
-        axes[1, 1].legend()
+        axes[1].boxplot([self.df['height']], tick_labels=['Height'])
+        axes[1].set_title('Box Plot - Height', fontweight='bold')
+        axes[1].set_ylabel('Pixels')
+        axes[1].grid(True, alpha=0.3)
         
         plt.tight_layout()
-        output_path = self.output_dir / 'statistics_summary.png'
+        output_path = self.output_dir / 'box_plot_width_height.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print(f"✓ Đã lưu: {output_path}")
         plt.close()
+        
+        # 2. Mean, Median, Std comparison
+        stats_df = pd.DataFrame({
+            'Width': [self.df['width'].mean(), self.df['width'].median(), self.df['width'].std()],
+            'Height': [self.df['height'].mean(), self.df['height'].median(), self.df['height'].std()]
+        }, index=['Mean', 'Median', 'Std'])
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        x = range(len(stats_df))
+        width = 0.35
+        ax.bar([i - width/2 for i in x], stats_df['Width'], width, label='Width', color='skyblue')
+        ax.bar([i + width/2 for i in x], stats_df['Height'], width, label='Height', color='lightcoral')
+        ax.set_title('Thong ke: Mean, Median, Std', fontweight='bold', fontsize=14)
+        ax.set_xticks(x)
+        ax.set_xticklabels(stats_df.index)
+        ax.set_ylabel('Pixels')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        output_path = self.output_dir / 'thong_ke_mean_median_std.png'
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Đã lưu: {output_path}")
+        plt.close()
+        
+        # 3. File size distribution
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.hist(self.df['size_kb'], bins=30, color='mediumseagreen', edgecolor='black')
+        ax.set_title('Phan bo kich thuoc file', fontweight='bold', fontsize=14)
+        ax.set_xlabel('Size (KB)')
+        ax.set_ylabel('Frequency')
+        ax.axvline(self.df['size_kb'].mean(), color='red', linestyle='--',
+                   label=f"Mean: {self.df['size_kb'].mean():.1f} KB")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        output_path = self.output_dir / 'phan_bo_file_size.png'
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Đã lưu: {output_path}")
+        plt.close()
+
     
     def plot_file_size_by_category(self):
         """Kích thước file theo category"""
@@ -517,40 +531,26 @@ class DataVisualizer:
         plt.close()
     
     def generate_all_visualizations(self):
-        """Tạo tất cả visualizations"""
-        print("\n🎨 Đang tạo visualizations...")
+        """Tạo 4 biểu đồ cần thiết"""
+        print("\nDang tao bieu do...")
         print("="*60)
         
         self.create_summary_table()
         
-        # Biểu đồ cơ bản
-        self.plot_category_distribution()
-        self.plot_size_histogram()
-        self.plot_scatter()
-        self.plot_statistics()
-        
-        # Biểu đồ mới - Trực quan hơn (không ghép 9 plot vào 1 ảnh)
-        self.plot_file_size_by_category()
-        self.plot_aspect_ratio_distribution()
-        self.plot_category_comparison()
-        
-        # Biểu đồ từ dashboard (tách riêng)
-        self.plot_category_pie_chart()
-        self.plot_average_area_by_category()
-        self.plot_average_file_size_by_category()
-        self.plot_width_distribution_violin()
-        self.plot_height_distribution_violin()
-        self.plot_area_vs_file_size_scatter()
-        self.plot_category_summary_table()
+        # 4 biểu đồ cơ bản (theo yêu cầu slide)
+        self.plot_category_distribution()  # 1. Bar chart
+        self.plot_size_histogram()         # 2. Histogram
+        self.plot_scatter()                # 3. Scatter plot
+        self.plot_statistics()             # 4. Statistics summary
         
         print("\n" + "="*60)
-        print(f"✅ Đã tạo xong {13} biểu đồ! Kiểm tra thư mục: {self.output_dir}")
+        print(f"Da tao xong 4 bieu do! Thu muc: {self.output_dir}")
         print("="*60)
 
 
 def main():
     """Main function"""
-    print("🚀 Data Visualization Pipeline")
+    print("Truc quan hoa du lieu")
     print("="*60)
     
     visualizer = DataVisualizer()
