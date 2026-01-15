@@ -8,6 +8,24 @@ from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 try:
+    import cv2
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+    print("opencv-python chưa cài đặt. Chạy: pip install opencv-python để detect ảnh mờ.")
+
+try:
+    from pymongo import MongoClient
+    from bson import Binary
+    HAS_MONGO = True
+except ImportError:
+    HAS_MONGO = False
+    print("pymongo chưa cài đặt. Chạy: pip install pymongo")
+
+# Luon dung config, khong fallback hard-code URI
+from config import CONNECTION_STRING, DATABASE_NAME, COLLECTION_NAME
+
+try:
     import imagehash
     HAS_IMAGEHASH = True
 except ImportError:
@@ -151,6 +169,89 @@ class TrafficSignProcessor:
                     row = self.df.iloc[idx]
                     print(f"    - {row['filename']} ({row['width']}x{row['height']})")
     
+    # ───────────────────────────
+    # EDA / CHECKING (theo slide)
+    # ───────────────────────────
+    def analyze_data(self):
+        """Thống kê tổng quan metadata (EDA cơ bản)."""
+        print("\nPHÂN TÍCH TỔNG QUAN (EDA)")
+        print("-" * 60)
+        if self.df is None or self.df.empty:
+            print("Metadata trống. Gọi create_metadata() trước.")
+            return
+        print("Số ảnh theo category:")
+        print(self.df['category'].value_counts())
+        print("\nThống kê width / height / size_kb:")
+        print(self.df[['width', 'height', 'size_kb']].describe().round(2))
+
+    def check_missing_values(self):
+        """Kiểm tra giá trị thiếu trong metadata."""
+        print("\nKIỂM TRA GIÁ TRỊ THIẾU")
+        print("-" * 60)
+        if self.df is None:
+            print("Metadata trống. Gọi create_metadata() trước.")
+            return
+        missing = self.df.isnull().sum()
+        if missing.sum() == 0:
+            print("Không có giá trị thiếu.")
+        else:
+            print(missing[missing > 0])
+
+    def detect_outliers(self):
+        """Phát hiện outlier bằng IQR (không xóa, chỉ báo cáo)."""
+        print("\nPHÁT HIỆN OUTLIER (IQR)")
+        print("-" * 60)
+        if self.df is None:
+            print("Metadata trống. Gọi create_metadata() trước.")
+            return
+        for col in ['width', 'height', 'size_kb']:
+            Q1 = self.df[col].quantile(0.25)
+            Q3 = self.df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower = Q1 - 1.5 * IQR
+            upper = Q3 + 1.5 * IQR
+            outliers = self.df[(self.df[col] < lower) | (self.df[col] > upper)]
+            print(f"{col}: {len(outliers)} outliers")
+
+    def detect_and_remove_blurry(self, threshold: float = 100.0):
+        """
+        Phát hiện và loại bỏ ảnh mờ dựa trên Laplacian variance.
+        threshold càng cao → lọc gắt hơn.
+        """
+        if not HAS_CV2:
+            print("\nBỏ qua detect ảnh mờ (opencv-python chưa cài).")
+            return
+        if self.df is None or self.df.empty:
+            print("\nMetadata trống. Gọi create_metadata() trước.")
+            return
+
+        print("\nPHÁT HIỆN ẢNH MỜ (Laplacian variance)")
+        print("-" * 60)
+
+        def lap_var(path: str):
+            try:
+                img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+                if img is None:
+                    return np.nan
+                return float(cv2.Laplacian(img, cv2.CV_64F).var())
+            except Exception:
+                return np.nan
+
+        self.df['laplacian_var'] = self.df['image_path'].apply(lap_var)
+        blurry_mask = self.df['laplacian_var'] < threshold
+        n_blurry = blurry_mask.sum()
+        print(f"Tổng ảnh mờ (var < {threshold:.1f}): {n_blurry}")
+
+        if n_blurry > 0:
+            before = len(self.df)
+            self.df = self.df[~blurry_mask].reset_index(drop=True)
+            print(f"Đã loại bỏ {before - len(self.df)} ảnh mờ. Còn lại: {len(self.df)} ảnh.")
+        else:
+            print("Không phát hiện ảnh mờ nào cần loại bỏ.")
+
+    # ───────────────────────────
+    # CLEANING
+    # ───────────────────────────
     def clean_data(self, remove_outliers=False, min_size=32):
         """Làm sạch dữ liệu: xóa trùng, ảnh nhỏ, outliers (nếu chọn)"""
         print("\n" + "="*60)
@@ -196,11 +297,64 @@ class TrafficSignProcessor:
         
         print(f"\nKết quả: {original_size} → {len(self.df)} images")
     
-    def save_metadata(self):
-        """Lưu metadata sau khi clean"""
-        self.metadata_path.parent.mkdir(parents=True, exist_ok=True)
-        self.df.to_csv(self.metadata_path, index=False)
-        print(f"Đã lưu metadata: {self.metadata_path}")
+    # ───────────────────────────
+    # DATA INTEGRATION → MongoDB
+    # ───────────────────────────
+    def upload_to_mongodb(self, drop_existing: bool = False, include_image: bool = True):
+        """
+        Đẩy metadata (và tùy chọn nội dung ảnh) lên MongoDB.
+        - drop_existing: True → xóa dữ liệu cũ trong collection trước khi insert.
+        - include_image: True → lưu cả bytes ảnh (Binary); False → chỉ lưu metadata.
+        """
+        if not HAS_MONGO:
+            print("Bỏ qua upload MongoDB (pymongo chưa cài).")
+            return
+        if self.df is None or self.df.empty:
+            print("Không có metadata để upload. Gọi create_metadata()/clean_data() trước.")
+            return
+
+        print("\n" + "=" * 60)
+        print("UPLOAD DỮ LIỆU LÊN MONGODB (Data Integration)")
+        print("=" * 60)
+
+        client = MongoClient(CONNECTION_STRING)
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+
+        if drop_existing:
+            collection.delete_many({})
+            print("Đã xóa toàn bộ document cũ trong collection.")
+
+        docs = []
+        for _, row in self.df.iterrows():
+            doc = {
+                'filename': row['filename'],
+                'category': row['category'],
+                'width': int(row['width']),
+                'height': int(row['height']),
+                'format': row.get('format'),
+                'mode': row.get('mode'),
+                'size_kb': float(row['size_kb']),
+                'image_path': row['image_path'],
+            }
+            if 'md5_hash' in self.df.columns:
+                doc['md5_hash'] = row['md5_hash']
+            if include_image:
+                try:
+                    with open(row['image_path'], 'rb') as f:
+                        doc['image'] = Binary(f.read())
+                except Exception as e:
+                    print(f"Lỗi đọc file {row['image_path']}: {e}")
+            docs.append(doc)
+
+        if docs:
+            collection.insert_many(docs)
+            print(f"Đã upload {len(docs)} documents vào MongoDB "
+                  f"({DATABASE_NAME}.{COLLECTION_NAME}).")
+        else:
+            print("Không có document nào để upload.")
+
+        client.close()
     
     def split_dataset(self, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15):
         """Chia dataset thành train/val/test theo category"""
@@ -237,9 +391,9 @@ class TrafficSignProcessor:
         self.val_df = pd.concat(val_data, ignore_index=True)
         self.test_df = pd.concat(test_data, ignore_index=True)
         
-        print(f"✓ Train: {len(self.train_df)} ({train_ratio*100:.0f}%)")
-        print(f"✓ Val:   {len(self.val_df)} ({val_ratio*100:.0f}%)")
-        print(f"✓ Test:  {len(self.test_df)} ({test_ratio*100:.0f}%)")
+        print(f"Train: {len(self.train_df)} ({train_ratio*100:.0f}%)")
+        print(f"Val:   {len(self.val_df)} ({val_ratio*100:.0f}%)")
+        print(f"Test:  {len(self.test_df)} ({test_ratio*100:.0f}%)")
     
     def resize_and_save(self, target_size=(64, 64), output_dir='data/processed'):
         """Resize và lưu ảnh vào thư mục processed"""
@@ -274,6 +428,11 @@ class TrafficSignProcessor:
         print(f"\nĐã lưu tất cả ảnh vào: {out_path}")
 
 
+class DataCleaner(TrafficSignProcessor):
+    """Giữ tên class cũ để main.py sử dụng cho bước Preprocessing."""
+    pass
+
+
 def main():
     print("Pipeline Tổng hợp: Cleaning + Preprocessing")
     print("="*70)
@@ -286,8 +445,11 @@ def main():
     processor.add_perceptual_hash()
     processor.find_exact_duplicates()
     processor.find_similar_images(threshold=5)
+    processor.analyze_data()
+    processor.check_missing_values()
+    processor.detect_outliers()
     processor.clean_data(remove_outliers=False)
-    processor.save_metadata()
+    processor.upload_to_mongodb(drop_existing=True, include_image=True)
     
     # 2. Split & Preprocess
     processor.split_dataset()
@@ -298,7 +460,7 @@ def main():
     print("="*70)
     print(f"Tổng ảnh sau clean: {len(processor.df)}")
     print(f"Train/Val/Test: {len(processor.train_df)} / {len(processor.val_df)} / {len(processor.test_df)}")
-    print("Metadata: data/metadata.csv")
+    print("Metadata nằm trong MongoDB (traffic_signs_db.images)")
     print("Ảnh đã xử lý: data/processed/")
 
 

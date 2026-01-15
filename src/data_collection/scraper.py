@@ -174,6 +174,29 @@ class TrafficSignScraper:
         print(f"Đã scrape {count} ảnh cho '{query}'")
         return count
 
+    # ───────────────────────────
+    # Metadata helpers
+    # ───────────────────────────
+    def save_metadata(self, path: str = 'data/scrape_metadata.json'):
+        """Lưu metadata ảnh đã cào về ra file JSON (phục vụ kiểm tra/EDA)."""
+        if not self.metadata:
+            print("Không có metadata để lưu.")
+            return
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('w', encoding='utf-8') as f:
+            json.dump(self.metadata, f, ensure_ascii=False, indent=2)
+        print(f"Đã lưu metadata scrape: {path}")
+
+    def get_statistics(self):
+        """Trả về thống kê số ảnh theo category từ metadata."""
+        stats = {}
+        for item in self.metadata:
+            cat = item['category']
+            stats[cat] = stats.get(cat, 0) + 1
+        return stats
+
+
 def main():
     print("Traffic Sign Web Scraper Nâng cấp")
     print("="*60)

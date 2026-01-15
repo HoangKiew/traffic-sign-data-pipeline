@@ -3,18 +3,55 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 
+try:
+    from pymongo import MongoClient
+    HAS_MONGO = True
+except ImportError:
+    HAS_MONGO = False
+    print("pymongo chưa cài đặt. Chạy: pip install pymongo để visualize từ MongoDB")
+
+# Luon dung config, khong fallback hard-code URI
+from config import CONNECTION_STRING, DATABASE_NAME, COLLECTION_NAME
+
 
 class DataVisualizer:
-    #Visualize traffic sign dataset
+    # Visualize traffic sign dataset
     
     def __init__(self, metadata_path='data/metadata.csv'):
-        self.df = pd.read_csv(metadata_path)
         self.output_dir = Path('reports/figures')
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Set style
         sns.set_style('whitegrid')
         plt.rcParams['figure.figsize'] = (12, 6)
+
+        # Luon doc metadata tu MongoDB (khong dung CSV nua)
+        print("Đọc metadata từ MongoDB...")
+        self.df = self._load_from_mongodb()
+        
+        if self.df is None or self.df.empty:
+            raise ValueError("Không có metadata để vẽ biểu đồ (MongoDB rỗng).")
+
+    def _load_from_mongodb(self) -> pd.DataFrame:
+        """Đọc metadata (không gồm bytes ảnh) từ MongoDB và trả về DataFrame."""
+        if not HAS_MONGO:
+            print("Không thể đọc metadata từ MongoDB vì chưa cài pymongo.")
+            return pd.DataFrame()
+        client = MongoClient(CONNECTION_STRING)
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        # Bỏ field image (rất nặng)
+        cursor = collection.find({}, {"image": 0})
+        docs = list(cursor)
+        client.close()
+        if not docs:
+            print("MongoDB không có document nào trong collection metadata.")
+            return pd.DataFrame()
+        for d in docs:
+            d.pop('_id', None)
+        df = pd.DataFrame(docs)
+        print(f"Đã load {len(df)} bản ghi metadata từ MongoDB ({DATABASE_NAME}.{COLLECTION_NAME})")
+        return df
     
     def create_summary_table(self):
         """
@@ -41,7 +78,7 @@ class DataVisualizer:
     
     def plot_category_distribution(self):
         """
-        Bar chart: Phân bố số lượng theo category
+        Bar chart: Phan bo so luong theo category
         Theo slide: "Biểu đồ bar chart"
         """
         plt.figure(figsize=(10, 6))
@@ -61,7 +98,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'phan_bo_category.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_size_histogram(self):
@@ -92,7 +129,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'histogram_kich_thuoc.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_scatter(self):
@@ -120,7 +157,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'bieu_do_width_height.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_statistics(self):
@@ -143,7 +180,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'box_plot_width_height.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
         
         # 2. Mean, Median, Std comparison
@@ -167,7 +204,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'thong_ke_mean_median_std.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
         
         # 3. File size distribution
@@ -184,7 +221,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'phan_bo_file_size.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
 
     
@@ -212,7 +249,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'file_size_by_category.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_aspect_ratio_distribution(self):
@@ -254,7 +291,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'aspect_ratio_distribution.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_category_comparison(self):
@@ -322,7 +359,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'category_comparison.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_category_pie_chart(self):
@@ -340,7 +377,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'category_pie_chart.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_average_area_by_category(self):
@@ -368,7 +405,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'average_area_by_category.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_average_file_size_by_category(self):
@@ -394,7 +431,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'average_file_size_by_category.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_width_distribution_violin(self):
@@ -423,7 +460,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'width_distribution_violin.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_height_distribution_violin(self):
@@ -452,7 +489,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'height_distribution_violin.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_area_vs_file_size_scatter(self):
@@ -478,7 +515,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'area_vs_file_size_scatter.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def plot_category_summary_table(self):
@@ -522,7 +559,7 @@ class DataVisualizer:
         
         output_path = self.output_dir / 'category_summary_table.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Đã lưu: {output_path}")
+        print(f"Da luu: {output_path}")
         plt.close()
     
     def generate_all_visualizations(self):
@@ -539,7 +576,7 @@ class DataVisualizer:
         self.plot_statistics()             # 4. Statistics summary
         
         print("\n" + "="*60)
-        print(f"Da tao xong 4 bieu do! Thu muc: {self.output_dir}")
+        print(f"Da tao xong 4 bieu do. Thu muc: {self.output_dir}")
         print("="*60)
 
 
