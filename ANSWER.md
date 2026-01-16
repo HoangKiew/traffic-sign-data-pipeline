@@ -215,16 +215,23 @@ if img.width < 50 or img.height < 50:
 ### 7. KẾT QUẢ THU THẬP
 
 **Dữ liệu thu được:**
-- Tổng: **199 ảnh**
-- Phân loại: 4 categories (prohibitory, warning, mandatory, informative)
-- Format: JPEG
+- Raw: **2695 ảnh** (từ Google Images)
+- Sau cleaning: **1433 ảnh** (loại 1262 duplicate)
+- Phân loại: 4 categories
+  - informative: 415 ảnh
+  - mandatory: 367 ảnh
+  - prohibitory: 357 ảnh
+  - warning: 294 ảnh
+- Format: JPEG, PNG
 - Kích thước: 50px - 3072px
-- Metadata: CSV file với 8 columns
+- Metadata: CSV file với 9 columns
 
 **Chất lượng:**
-- ✅ Không có duplicates (MD5 hash)
-- ✅ Phát hiện 2 nhóm similar images (perceptual hash)
-- ✅ Đa dạng nguồn (4 websites)
+- ✅ Loại bỏ 1262 duplicates (MD5 hash)
+- ✅ Dataset cân bằng tốt
+- ✅ Train: 1000 ảnh (70%)
+- ✅ Val: 215 ảnh (15%)
+- ✅ Test: 218 ảnh (15%)
 
 ---
 
@@ -265,7 +272,7 @@ if img.width < 50 or img.height < 50:
 ---
 
 **Tóm tắt cho thầy:**
-> "Em sử dụng **Python** với các thư viện **Requests** và **BeautifulSoup** để scrape dữ liệu từ 4 nguồn web chính thức (Wikipedia, Wikimedia Commons, VoPhuToan, ThuVienPhapLuat). Sau đó dùng **Pandas** để xử lý metadata, **hashlib/imagehash** để phát hiện duplicates, và **Matplotlib/Seaborn** để visualization. Tổng cộng thu thập được **199 ảnh** biển báo giao thông Việt Nam."
+> "Em sử dụng **Python** với **Selenium WebDriver** để scrape dữ liệu động từ **Google Images** với 24 queries khác nhau. Thu thập được **2695 ảnh raw**, sau đó dùng **Pandas** xử lý metadata, **hashlib** phát hiện và loại bỏ **1262 duplicates**, còn lại **1433 ảnh sạch**. Cuối cùng dùng **Matplotlib/Seaborn** tạo **6 biểu đồ** phân tích phân bố, outliers, và mối quan hệ giữa các biến. Dataset được chia thành Train (1000), Val (215), Test (218) sẵn sàng cho machine learning."
 
 ---
 

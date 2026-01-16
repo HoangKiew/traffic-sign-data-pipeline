@@ -1,43 +1,70 @@
-"""
-Data Cleaning Module
-Xử lý và làm sạch dữ liệu theo workflow trong slide
-Bổ sung: MD5 Hash và Perceptual Hash để phát hiện duplicates & similar images
-"""
-
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from PIL import Image
 import os
 import hashlib
+from sklearn.model_selection import train_test_split
+from tqdm import tqdm
+
+try:
+    import cv2
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+    print("opencv-python chưa cài đặt. Chạy: pip install opencv-python để detect ảnh mờ.")
+
+try:
+    from pymongo import MongoClient
+    from bson import Binary
+    HAS_MONGO = True
+except ImportError:
+    HAS_MONGO = False
+    print("pymongo chưa cài đặt. Chạy: pip install pymongo")
+
+# Luon dung config, khong fallback hard-code URI
+from config import CONNECTION_STRING, DATABASE_NAME, COLLECTION_NAME
 
 try:
     import imagehash
     HAS_IMAGEHASH = True
 except ImportError:
     HAS_IMAGEHASH = False
+<<<<<<< HEAD:src/data_processing/clean.py
     print(" imagehash chưa cài đặt. Chạy: pip install imagehash")
+=======
+    print("imagehash chưa cài đặt. Chạy: pip install imagehash")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
 
 
-class DataCleaner:
-    """Clean và validate traffic sign dataset"""
+class TrafficSignProcessor:
+    """Xử lý toàn bộ: clean + split + resize ảnh biển báo giao thông"""
     
-    def __init__(self, data_dir='data/raw'):
-        self.data_dir = Path(data_dir)
+    def __init__(self, raw_dir='data/raw', metadata_path='data/metadata.csv'):
+        self.raw_dir = Path(raw_dir)
+        self.metadata_path = Path(metadata_path)
         self.df = None
+        self.train_df = None
+        self.val_df = None
+        self.test_df = None
     
     def create_metadata(self):
+<<<<<<< HEAD:src/data_processing/clean.py
         """
         Tạo metadata DataFrame từ raw images
         Scan tất cả images và thu thập thông tin
         """
         print(" Đang tạo metadata từ raw images...")
+=======
+        """Tạo metadata từ thư mục ảnh thô"""
+        print("Đang tạo metadata từ raw images...")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
         
         data = []
         categories = ['prohibitory', 'warning', 'mandatory', 'informative']
         
         for category in categories:
-            category_path = self.data_dir / category
+            category_path = self.raw_dir / category
             if not category_path.exists():
                 continue
             
@@ -56,17 +83,22 @@ class DataCleaner:
                                 'size_kb': img_file.stat().st_size / 1024
                             })
                     except Exception as e:
-                        print(f"⚠️  Lỗi đọc {img_file.name}: {e}")
+                        print(f"Lỗi đọc {img_file.name}: {e}")
         
         self.df = pd.DataFrame(data)
-        print(f"✓ Đã tạo metadata cho {len(self.df)} images")
+        print(f"Đã tạo metadata cho {len(self.df)} images")
         return self.df
     
     def add_md5_hash(self):
+<<<<<<< HEAD:src/data_processing/clean.py
         """
         Thêm MD5 hash để phát hiện exact duplicates
         """
         print("\n Đang tính MD5 hash...")
+=======
+        """Thêm MD5 hash để phát hiện trùng lặp hoàn toàn"""
+        print("\nĐang tính MD5 hash...")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
         
         def get_md5(img_path):
             try:
@@ -76,18 +108,22 @@ class DataCleaner:
                 return None
         
         self.df['md5_hash'] = self.df['image_path'].apply(get_md5)
-        print(f"✓ Đã tính MD5 hash cho {len(self.df)} images")
+        print(f"Đã tính MD5 hash cho {len(self.df)} images")
     
     def add_perceptual_hash(self):
-        """
-        Thêm Perceptual hash để phát hiện similar images
-        Cần cài: pip install imagehash
-        """
+        """Thêm perceptual hash để phát hiện ảnh tương tự"""
         if not HAS_IMAGEHASH:
+<<<<<<< HEAD:src/data_processing/clean.py
             print("  Bỏ qua Perceptual hash (chưa cài imagehash)")
             return
         
         print("\n Đang tính Perceptual hash...")
+=======
+            print("Bỏ qua perceptual hash (chưa cài imagehash)")
+            return
+        
+        print("\nĐang tính perceptual hash...")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
         
         def get_phash(img_path):
             try:
@@ -97,13 +133,12 @@ class DataCleaner:
                 return None
         
         self.df['phash'] = self.df['image_path'].apply(get_phash)
-        print(f"✓ Đã tính Perceptual hash cho {len(self.df)} images")
+        print(f"Đã tính perceptual hash cho {len(self.df)} images")
     
     def find_exact_duplicates(self):
-        """
-        Tìm ảnh trùng lặp hoàn toàn bằng MD5 hash
-        """
+        """Tìm và báo cáo ảnh trùng lặp hoàn toàn"""
         if 'md5_hash' not in self.df.columns:
+<<<<<<< HEAD:src/data_processing/clean.py
             print("  Chưa có MD5 hash. Gọi add_md5_hash() trước.")
             return []
         
@@ -114,23 +149,37 @@ class DataCleaner:
             print(" Không có ảnh trùng lặp")
         else:
             print(f"  Tìm thấy {len(duplicates)} ảnh trùng lặp:")
+=======
+            print("Chưa có MD5 hash. Gọi add_md5_hash() trước.")
+            return
+        
+        print("\nTìm exact duplicates (MD5)...")
+        duplicates = self.df[self.df.duplicated(subset=['md5_hash'], keep=False)]
+        
+        if len(duplicates) == 0:
+            print("Không có ảnh trùng lặp")
+        else:
+            print(f"Tìm thấy {len(duplicates)} ảnh trùng lặp:")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
             for hash_val, group in duplicates.groupby('md5_hash'):
                 print(f"  Hash {hash_val[:8]}...:")
                 for _, row in group.iterrows():
                     print(f"    - {row['filename']}")
-        
-        return duplicates
     
     def find_similar_images(self, threshold=5):
-        """
-        Tìm ảnh tương tự bằng Perceptual hash
-        threshold: 0-5 = rất tương tự, 6-10 = tương tự, 11+ = khác
-        """
+        """Tìm và báo cáo ảnh tương tự (perceptual hash)"""
         if not HAS_IMAGEHASH or 'phash' not in self.df.columns:
+<<<<<<< HEAD:src/data_processing/clean.py
             print("  Không thể tìm similar images (chưa có phash)")
             return []
         
         print(f"\n Tìm similar images (threshold={threshold})...")
+=======
+            print("Không thể tìm similar images (chưa có phash)")
+            return
+        
+        print(f"\nTìm similar images (threshold={threshold})...")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
         
         similar_groups = []
         processed = set()
@@ -157,18 +206,26 @@ class DataCleaner:
                 similar_groups.append(group)
         
         if len(similar_groups) == 0:
+<<<<<<< HEAD:src/data_processing/clean.py
             print(" Không có ảnh tương tự")
         else:
             print(f"  Tìm thấy {len(similar_groups)} nhóm ảnh tương tự:")
+=======
+            print("Không có ảnh tương tự")
+        else:
+            print(f"Tìm thấy {len(similar_groups)} nhóm ảnh tương tự:")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
             for i, group in enumerate(similar_groups, 1):
                 print(f"  Nhóm {i}:")
                 for idx in group:
                     row = self.df.iloc[idx]
                     print(f"    - {row['filename']} ({row['width']}x{row['height']})")
-        
-        return similar_groups
     
+    # ───────────────────────────
+    # EDA / CHECKING (theo slide)
+    # ───────────────────────────
     def analyze_data(self):
+<<<<<<< HEAD:src/data_processing/clean.py
         """
         Phân tích dữ liệu theo workflow trong slide:
         - Đọc dữ liệu bằng pandas
@@ -191,26 +248,62 @@ class DataCleaner:
         print("\n" + "="*60)
         print(" PHÂN BỐ THEO CATEGORY")
         print("="*60)
+=======
+        """Thống kê tổng quan metadata (EDA cơ bản)."""
+        print("\nPHÂN TÍCH TỔNG QUAN (EDA)")
+        print("-" * 60)
+        if self.df is None or self.df.empty:
+            print("Metadata trống. Gọi create_metadata() trước.")
+            return
+        print("Số ảnh theo category:")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
         print(self.df['category'].value_counts())
-    
+        print("\nThống kê width / height / size_kb:")
+        print(self.df[['width', 'height', 'size_kb']].describe().round(2))
+
     def check_missing_values(self):
+<<<<<<< HEAD:src/data_processing/clean.py
         """Kiểm tra missing values"""
         print("\n" + "="*60)
         print(" KIỂM TRA MISSING VALUES")
         print("="*60)
         
+=======
+        """Kiểm tra giá trị thiếu trong metadata."""
+        print("\nKIỂM TRA GIÁ TRỊ THIẾU")
+        print("-" * 60)
+        if self.df is None:
+            print("Metadata trống. Gọi create_metadata() trước.")
+            return
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
         missing = self.df.isnull().sum()
         if missing.sum() == 0:
-            print("✓ Không có missing values")
+            print("Không có giá trị thiếu.")
         else:
             print(missing[missing > 0])
-    
+
     def detect_outliers(self):
+        """Phát hiện outlier bằng IQR (không xóa, chỉ báo cáo)."""
+        print("\nPHÁT HIỆN OUTLIER (IQR)")
+        print("-" * 60)
+        if self.df is None:
+            print("Metadata trống. Gọi create_metadata() trước.")
+            return
+        for col in ['width', 'height', 'size_kb']:
+            Q1 = self.df[col].quantile(0.25)
+            Q3 = self.df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower = Q1 - 1.5 * IQR
+            upper = Q3 + 1.5 * IQR
+            outliers = self.df[(self.df[col] < lower) | (self.df[col] > upper)]
+            print(f"{col}: {len(outliers)} outliers")
+
+    def detect_and_remove_blurry(self, threshold: float = 100.0):
         """
-        Phát hiện outliers theo workflow:
-        - Ảnh quá nhỏ hoặc quá lớn
-        - Kích thước bất thường
+        Phát hiện và loại bỏ ảnh mờ dựa trên Laplacian variance.
+        threshold càng cao → lọc gắt hơn.
         """
+<<<<<<< HEAD:src/data_processing/clean.py
         print("\n" + "="*60)
         print(" PHÁT HIỆN OUTLIERS")
         print("="*60)
@@ -248,19 +341,55 @@ class DataCleaner:
             'too_small': too_small
         }
     
+=======
+        if not HAS_CV2:
+            print("\nBỏ qua detect ảnh mờ (opencv-python chưa cài).")
+            return
+        if self.df is None or self.df.empty:
+            print("\nMetadata trống. Gọi create_metadata() trước.")
+            return
+
+        print("\nPHÁT HIỆN ẢNH MỜ (Laplacian variance)")
+        print("-" * 60)
+
+        def lap_var(path: str):
+            try:
+                img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+                if img is None:
+                    return np.nan
+                return float(cv2.Laplacian(img, cv2.CV_64F).var())
+            except Exception:
+                return np.nan
+
+        self.df['laplacian_var'] = self.df['image_path'].apply(lap_var)
+        blurry_mask = self.df['laplacian_var'] < threshold
+        n_blurry = blurry_mask.sum()
+        print(f"Tổng ảnh mờ (var < {threshold:.1f}): {n_blurry}")
+
+        if n_blurry > 0:
+            before = len(self.df)
+            self.df = self.df[~blurry_mask].reset_index(drop=True)
+            print(f"Đã loại bỏ {before - len(self.df)} ảnh mờ. Còn lại: {len(self.df)} ảnh.")
+        else:
+            print("Không phát hiện ảnh mờ nào cần loại bỏ.")
+
+    # ───────────────────────────
+    # CLEANING
+    # ───────────────────────────
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
     def clean_data(self, remove_outliers=False, min_size=32):
-        """
-        Làm sạch dữ liệu:
-        - Loại bỏ duplicates
-        - Loại bỏ ảnh quá nhỏ
-        - Loại bỏ outliers (optional)
-        """
+        """Làm sạch dữ liệu: xóa trùng, ảnh nhỏ, outliers (nếu chọn)"""
         print("\n" + "="*60)
+<<<<<<< HEAD:src/data_processing/clean.py
         print(" CLEANING DATA")
+=======
+        print("CLEANING DATA")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
         print("="*60)
         
         original_size = len(self.df)
         
+<<<<<<< HEAD:src/data_processing/clean.py
         # Remove duplicates by filename
         before_dup = len(self.df)
         self.df = self.df.drop_duplicates(subset=['filename'])
@@ -281,17 +410,42 @@ class DataCleaner:
             (self.df['height'] >= min_size)
         ]
         print(f" Đã loại bỏ {before - len(self.df)} ảnh quá nhỏ")
+=======
+        # Xóa trùng theo tên file
+        before = len(self.df)
+        self.df = self.df.drop_duplicates(subset=['filename'])
+        print(f"Đã loại bỏ {before - len(self.df)} duplicates (by filename)")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
         
-        # Remove outliers nếu cần
+        # Xóa trùng exact bằng MD5
+        if 'md5_hash' in self.df.columns:
+            before = len(self.df)
+            self.df = self.df.drop_duplicates(subset=['md5_hash'], keep='first')
+            removed = before - len(self.df)
+            if removed > 0:
+                print(f"Đã loại bỏ {removed} exact duplicates (by MD5)")
+        
+        # Xóa ảnh quá nhỏ
+        before = len(self.df)
+        self.df = self.df[(self.df['width'] >= min_size) & (self.df['height'] >= min_size)]
+        print(f"Đã loại bỏ {before - len(self.df)} ảnh quá nhỏ")
+        
+        # Xóa outliers nếu chọn
         if remove_outliers:
-            outliers = self.detect_outliers()
-            outlier_indices = pd.concat([
-                outliers['outliers_width'],
-                outliers['outliers_height']
-            ]).index.unique()
+            Q1_w = self.df['width'].quantile(0.25)
+            Q3_w = self.df['width'].quantile(0.75)
+            IQR_w = Q3_w - Q1_w
+            outliers_w = self.df[(self.df['width'] < Q1_w - 1.5*IQR_w) | (self.df['width'] > Q3_w + 1.5*IQR_w)]
             
+            Q1_h = self.df['height'].quantile(0.25)
+            Q3_h = self.df['height'].quantile(0.75)
+            IQR_h = Q3_h - Q1_h
+            outliers_h = self.df[(self.df['height'] < Q1_h - 1.5*IQR_h) | (self.df['height'] > Q3_h + 1.5*IQR_h)]
+            
+            outlier_indices = pd.concat([outliers_w, outliers_h]).index.unique()
             before = len(self.df)
             self.df = self.df.drop(outlier_indices, errors='ignore')
+<<<<<<< HEAD:src/data_processing/clean.py
             print(f" Đã loại bỏ {before - len(self.df)} outliers")
         
         print(f"\n Kết quả: {original_size} → {len(self.df)} images")
@@ -324,10 +478,103 @@ class DataCleaner:
             train, temp = train_test_split(cat_df, test_size=(val_ratio + test_ratio), random_state=42)
             val, test = train_test_split(temp, test_size=test_ratio/(val_ratio + test_ratio), random_state=42)
             
+=======
+            print(f"Đã loại bỏ {before - len(self.df)} outliers")
+        
+        print(f"\nKết quả: {original_size} → {len(self.df)} images")
+    
+    # ───────────────────────────
+    # DATA INTEGRATION → MongoDB
+    # ───────────────────────────
+    def upload_to_mongodb(self, drop_existing: bool = False, include_image: bool = True):
+        """
+        Đẩy metadata (và tùy chọn nội dung ảnh) lên MongoDB.
+        - drop_existing: True → xóa dữ liệu cũ trong collection trước khi insert.
+        - include_image: True → lưu cả bytes ảnh (Binary); False → chỉ lưu metadata.
+        """
+        if not HAS_MONGO:
+            print("Bỏ qua upload MongoDB (pymongo chưa cài).")
+            return
+        if self.df is None or self.df.empty:
+            print("Không có metadata để upload. Gọi create_metadata()/clean_data() trước.")
+            return
+
+        print("\n" + "=" * 60)
+        print("UPLOAD DỮ LIỆU LÊN MONGODB (Data Integration)")
+        print("=" * 60)
+
+        client = MongoClient(CONNECTION_STRING)
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+
+        if drop_existing:
+            collection.delete_many({})
+            print("Đã xóa toàn bộ document cũ trong collection.")
+
+        docs = []
+        for _, row in self.df.iterrows():
+            doc = {
+                'filename': row['filename'],
+                'category': row['category'],
+                'width': int(row['width']),
+                'height': int(row['height']),
+                'format': row.get('format'),
+                'mode': row.get('mode'),
+                'size_kb': float(row['size_kb']),
+                'image_path': row['image_path'],
+            }
+            if 'md5_hash' in self.df.columns:
+                doc['md5_hash'] = row['md5_hash']
+            if include_image:
+                try:
+                    with open(row['image_path'], 'rb') as f:
+                        doc['image'] = Binary(f.read())
+                except Exception as e:
+                    print(f"Lỗi đọc file {row['image_path']}: {e}")
+            docs.append(doc)
+
+        if docs:
+            collection.insert_many(docs)
+            print(f"Đã upload {len(docs)} documents vào MongoDB "
+                  f"({DATABASE_NAME}.{COLLECTION_NAME}).")
+        else:
+            print("Không có document nào để upload.")
+
+        client.close()
+    
+    def split_dataset(self, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15):
+        """Chia dataset thành train/val/test theo category"""
+        print("\n" + "="*60)
+        print("CHIA DATASET")
+        print("="*60)
+        
+        train_data, val_data, test_data = [], [], []
+        
+        for category in self.df['category'].unique():
+            cat_df = self.df[self.df['category'] == category]
+            n = len(cat_df)
+            
+            if n < 6:
+                print(f"  {category}: {n} ảnh → Tất cả vào train")
+                train_data.append(cat_df)
+                continue
+            
+            if n < 15:
+                print(f"  {category}: {n} ảnh → Train/Test (80/20)")
+                train, test = train_test_split(cat_df, test_size=0.2, random_state=42)
+                train_data.append(train)
+                test_data.append(test)
+                continue
+            
+            print(f"  {category}: {n} ảnh → Train/Val/Test (70/15/15)")
+            train, temp = train_test_split(cat_df, test_size=val_ratio+test_ratio, random_state=42)
+            val, test = train_test_split(temp, test_size=test_ratio/(val_ratio+test_ratio), random_state=42)
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
             train_data.append(train)
             val_data.append(val)
             test_data.append(test)
         
+<<<<<<< HEAD:src/data_processing/clean.py
         self.train_df = pd.concat(train_data)
         self.val_df = pd.concat(val_data)
         self.test_df = pd.concat(test_data)
@@ -381,10 +628,61 @@ class DataCleaner:
 def main():
     """Main function - Chạy toàn bộ pipeline"""
     print("Lam sach du lieu + Xu ly anh")
+=======
+        self.train_df = pd.concat(train_data, ignore_index=True)
+        self.val_df = pd.concat(val_data, ignore_index=True)
+        self.test_df = pd.concat(test_data, ignore_index=True)
+        
+        print(f"Train: {len(self.train_df)} ({train_ratio*100:.0f}%)")
+        print(f"Val:   {len(self.val_df)} ({val_ratio*100:.0f}%)")
+        print(f"Test:  {len(self.test_df)} ({test_ratio*100:.0f}%)")
+    
+    def resize_and_save(self, target_size=(64, 64), output_dir='data/processed'):
+        """Resize và lưu ảnh vào thư mục processed"""
+        print("\n" + "="*60)
+        print("RESIZE VÀ LƯU ẢNH")
+        print("="*60)
+        
+        out_path = Path(output_dir)
+        for split in ['train', 'val', 'test']:
+            for cat in self.df['category'].unique():
+                (out_path / split / cat).mkdir(parents=True, exist_ok=True)
+        
+        for split_name, split_df in [('train', self.train_df), ('val', self.val_df), ('test', self.test_df)]:
+            print(f"\nĐang xử lý {split_name} set...")
+            count = 0
+            
+            for _, row in tqdm(split_df.iterrows(), total=len(split_df), desc=split_name):
+                try:
+                    img = Image.open(row['image_path'])
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    img_resized = img.resize(target_size, Image.Resampling.LANCZOS)
+                    
+                    save_path = out_path / split_name / row['category'] / f"{Path(row['filename']).stem}.png"
+                    img_resized.save(save_path, 'PNG')
+                    count += 1
+                except Exception as e:
+                    print(f"Lỗi xử lý {row['filename']}: {e}")
+            
+            print(f"Đã xử lý {count}/{len(split_df)} ảnh")
+        
+        print(f"\nĐã lưu tất cả ảnh vào: {out_path}")
+
+
+class DataCleaner(TrafficSignProcessor):
+    """Giữ tên class cũ để main.py sử dụng cho bước Preprocessing."""
+    pass
+
+
+def main():
+    print("Pipeline Tổng hợp: Cleaning + Preprocessing")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
     print("="*70)
     
-    cleaner = DataCleaner()
+    processor = TrafficSignProcessor()
     
+<<<<<<< HEAD:src/data_processing/clean.py
     # Part 1: Data Cleaning
     cleaner.create_metadata()
     cleaner.add_md5_hash()
@@ -410,6 +708,31 @@ def main():
     print(f"   - Train: {len(cleaner.train_df)} anh")
     print(f"   - Val:   {len(cleaner.val_df)} anh")
     print(f"   - Test:  {len(cleaner.test_df)} anh")
+=======
+    # 1. Cleaning
+    processor.create_metadata()
+    processor.add_md5_hash()
+    processor.add_perceptual_hash()
+    processor.find_exact_duplicates()
+    processor.find_similar_images(threshold=5)
+    processor.analyze_data()
+    processor.check_missing_values()
+    processor.detect_outliers()
+    processor.clean_data(remove_outliers=False)
+    processor.upload_to_mongodb(drop_existing=True, include_image=True)
+    
+    # 2. Split & Preprocess
+    processor.split_dataset()
+    processor.resize_and_save(target_size=(64, 64))
+    
+    print("\n" + "="*70)
+    print("HOÀN TẤT!")
+    print("="*70)
+    print(f"Tổng ảnh sau clean: {len(processor.df)}")
+    print(f"Train/Val/Test: {len(processor.train_df)} / {len(processor.val_df)} / {len(processor.test_df)}")
+    print("Metadata nằm trong MongoDB (traffic_signs_db.images)")
+    print("Ảnh đã xử lý: data/processed/")
+>>>>>>> origin/Uyen:src/data_processing/cleaner.py
 
 
 if __name__ == '__main__':

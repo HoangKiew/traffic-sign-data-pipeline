@@ -1,8 +1,3 @@
-"""
-Web Scraper cho Biển báo Giao thông
-Thu thập dữ liệu THÔ từ web (không dùng dataset có sẵn)
-"""
-
 import os
 import requests
 from bs4 import BeautifulSoup
@@ -12,16 +7,20 @@ from urllib.parse import urljoin, urlparse
 from PIL import Image
 from io import BytesIO
 import json
-
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 class TrafficSignScraper:
-    """Scrape traffic sign images from web sources"""
     
     def __init__(self, output_dir='data/raw'):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Categories
+        # Các loại biển báo
         self.categories = {
             'prohibitory': 'Biển cấm',
             'warning': 'Biển cảnh báo', 
@@ -29,249 +28,228 @@ class TrafficSignScraper:
             'informative': 'Biển chỉ dẫn'
         }
         
-        # Create category folders
+        # Tạo thư mục cho từng category
         for category in self.categories.keys():
             (self.output_dir / category).mkdir(exist_ok=True)
         
-        # Headers để tránh bị block
+        # Header tránh bị block
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-        # Metadata
         self.metadata = []
     
     def download_image(self, url, save_path, timeout=10):
-        """Download một ảnh từ URL"""
+        # Tải và kiểm tra ảnh
         try:
             response = requests.get(url, headers=self.headers, timeout=timeout)
             response.raise_for_status()
             
-            # Kiểm tra xem có phải ảnh không
-            content_type = response.headers.get('content-type', '')
-            if 'image' not in content_type:
-                print(f"⚠️  Không phải ảnh: {url}")
+            if 'image' not in response.headers.get('content-type', ''):
+                print(f"Không phải ảnh: {url}")
                 return False
             
-            # Mở và validate ảnh
             img = Image.open(BytesIO(response.content))
             
-            # Chỉ lưu ảnh đủ lớn (tránh icon nhỏ)
+            # Bỏ ảnh quá nhỏ
             if img.width < 50 or img.height < 50:
-                print(f"⚠️  Ảnh quá nhỏ ({img.width}x{img.height}): {url}")
+                print(f"Ảnh quá nhỏ ({img.width}x{img.height}): {url}")
                 return False
             
-            # Convert to RGB nếu cần
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            # Lưu ảnh
             img.save(save_path, 'JPEG', quality=95)
-            print(f"✓ Đã lưu: {save_path.name}")
+            print(f"Đã lưu: {save_path.name}")
             return True
             
         except Exception as e:
-            print(f"❌ Lỗi download {url}: {e}")
+            print(f"Lỗi download {url}: {e}")
             return False
     
-    def scrape_google_images(self, query, category, max_images=50):
-        """
-        Scrape từ Google Images
-        Note: Google Images khó scrape, cần dùng API hoặc Selenium
-        Đây là ví dụ cơ bản
-        """
-        print(f"\n🔍 Tìm kiếm: '{query}' (category: {category})")
+    def scrape_google_images_selenium(self, query, category, max_images=300, scroll_times=10):
+        # Scrape Google Images dùng Selenium
+        print(f"\nTìm kiếm Google Images (Selenium): '{query}' (category: {category})")
         
-        # Google Images search URL
-        search_url = f"https://www.google.com/search?q={query}&tbm=isch"
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        driver = webdriver.Chrome(options=options)
         
         try:
-            response = requests.get(search_url, headers=self.headers)
-            soup = BeautifulSoup(response.text, 'html.parser')
+            driver.get("https://www.google.com/imghp")
+            wait = WebDriverWait(driver, 10)
             
-            # Tìm các thẻ img
-            img_tags = soup.find_all('img')
+            search_box = wait.until(EC.presence_of_element_located((By.NAME, "q")))
+            search_box.send_keys(query)
+            search_box.send_keys(Keys.ENTER)
+            
+            # Cuộn để tải thêm ảnh
+            for _ in range(scroll_times):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+            
+            img_elements = driver.find_elements(By.CSS_SELECTOR, "img.rg_i")
             
             count = 0
-            for img in img_tags[:max_images]:
+            for img in img_elements[:max_images]:
                 if count >= max_images:
                     break
                 
-                img_url = img.get('src') or img.get('data-src')
+                try:
+                    img.click()
+                    time.sleep(1)
+                    large_img = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "img.sFlh5c.pT0Scc.iPVvYb")))
+                    img_url = large_img.get_attribute("src")
+                except:
+                    img_url = img.get_attribute("src") or img.get_attribute("data-src")
+                
                 if not img_url or img_url.startswith('data:'):
                     continue
                 
-                # Tạo filename
                 filename = f"{category}_{int(time.time())}_{count}.jpg"
                 save_path = self.output_dir / category / filename
                 
-                # Download
                 if self.download_image(img_url, save_path):
                     self.metadata.append({
                         'filename': filename,
                         'category': category,
-                        'source': 'google_images',
+                        'source': 'google_images_selenium',
                         'query': query,
                         'url': img_url
                     })
                     count += 1
                 
-                time.sleep(0.5)  # Delay để tránh bị block
+                time.sleep(1)
             
-            print(f"✓ Đã scrape {count} ảnh cho '{query}'")
+            print(f"Đã scrape {count} ảnh cho '{query}'")
             return count
             
         except Exception as e:
-            print(f"❌ Lỗi scrape Google Images: {e}")
+            print(f"Lỗi scrape Google Images Selenium: {e}")
             return 0
+        finally:
+            driver.quit()
     
-    def scrape_from_url_list(self, url_list_file, category):
-        """
-        Scrape từ danh sách URLs có sẵn
-        Format file: mỗi dòng là một URL ảnh
-        """
-        print(f"\n📋 Scrape từ file: {url_list_file}")
+    def scrape_bing_images(self, query, category, max_images=300):
+        # Scrape Bing Images dùng requests + BS4
+        print(f"\nTìm kiếm Bing Images: '{query}' (category: {category})")
         
-        if not Path(url_list_file).exists():
-            print(f"❌ File không tồn tại: {url_list_file}")
-            return 0
-        
-        with open(url_list_file, 'r', encoding='utf-8') as f:
-            urls = [line.strip() for line in f if line.strip()]
-        
+        base_url = f"https://www.bing.com/images/search?q={query}"
         count = 0
-        for i, url in enumerate(urls):
-            filename = f"{category}_{int(time.time())}_{i}.jpg"
-            save_path = self.output_dir / category / filename
-            
-            if self.download_image(url, save_path):
-                self.metadata.append({
-                    'filename': filename,
-                    'category': category,
-                    'source': 'url_list',
-                    'url': url
-                })
-                count += 1
-            
-            time.sleep(0.3)
         
-        print(f"✓ Đã download {count}/{len(urls)} ảnh")
-        return count
-    
-    def scrape_website(self, base_url, category, max_pages=5):
-        """
-        Scrape tất cả ảnh từ một website
-        Tìm tất cả thẻ <img> trong trang
-        """
-        print(f"\n🌐 Scrape website: {base_url}")
-        
-        try:
-            response = requests.get(base_url, headers=self.headers)
+        for page in range(1, 11):
+            url = f"{base_url}&first={(page-1)*35}"
+            response = requests.get(url, headers=self.headers)
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Tìm tất cả ảnh
-            img_tags = soup.find_all('img')
+            img_tags = soup.find_all('img', {'class': 'mimg'})
             
-            count = 0
             for i, img in enumerate(img_tags):
                 img_url = img.get('src') or img.get('data-src')
-                if not img_url:
+                if not img_url or img_url.startswith('data:'):
                     continue
                 
-                # Convert relative URL to absolute
-                img_url = urljoin(base_url, img_url)
-                
-                # Skip data URLs
-                if img_url.startswith('data:'):
-                    continue
-                
-                filename = f"{category}_{int(time.time())}_{i}.jpg"
+                filename = f"{category}_{int(time.time())}_{count}.jpg"
                 save_path = self.output_dir / category / filename
                 
                 if self.download_image(img_url, save_path):
                     self.metadata.append({
                         'filename': filename,
                         'category': category,
-                        'source': base_url,
+                        'source': 'bing_images',
+                        'query': query,
                         'url': img_url
                     })
                     count += 1
+                    if count >= max_images:
+                        break
                 
                 time.sleep(0.5)
             
-            print(f"✓ Đã scrape {count} ảnh từ {base_url}")
-            return count
-            
-        except Exception as e:
-            print(f"❌ Lỗi scrape website: {e}")
-            return 0
-    
-    def save_metadata(self):
-        """Lưu metadata"""
-        metadata_file = self.output_dir / 'scraping_metadata.json'
-        with open(metadata_file, 'w', encoding='utf-8') as f:
-            json.dump(self.metadata, f, indent=2, ensure_ascii=False)
-        print(f"\n✓ Đã lưu metadata: {metadata_file}")
-    
+            if count >= max_images:
+                break
+        
+        print(f"Đã scrape {count} ảnh cho '{query}'")
+        return count
+
+    # ───────────────────────────
+    # Metadata helpers
+    # ───────────────────────────
+    def save_metadata(self, path: str = 'data/scrape_metadata.json'):
+        """Lưu metadata ảnh đã cào về ra file JSON (phục vụ kiểm tra/EDA)."""
+        if not self.metadata:
+            print("Không có metadata để lưu.")
+            return
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('w', encoding='utf-8') as f:
+            json.dump(self.metadata, f, ensure_ascii=False, indent=2)
+        print(f"Đã lưu metadata scrape: {path}")
+
     def get_statistics(self):
-        """Thống kê dữ liệu đã scrape"""
+        """Trả về thống kê số ảnh theo category từ metadata."""
         stats = {}
-        for category in self.categories.keys():
-            category_dir = self.output_dir / category
-            count = len(list(category_dir.glob('*.jpg')))
-            stats[category] = count
+        for item in self.metadata:
+            cat = item['category']
+            stats[cat] = stats.get(cat, 0) + 1
         return stats
 
 
 def main():
-    """Main function - Ví dụ sử dụng"""
-    print("🚀 Traffic Sign Web Scraper")
+    print("Traffic Sign Web Scraper Nâng cấp")
     print("="*60)
     
     scraper = TrafficSignScraper()
     
-    print("\n💡 HƯỚNG DẪN SỬ DỤNG:")
-    print("-"*60)
-    print("""
-    Có 3 cách thu thập dữ liệu thô:
+    # Danh sách từ khóa tìm kiếm
+    keywords = {
+        'prohibitory': [
+            'biển báo cấm giao thông việt nam',
+            'biển cấm đỗ xe',
+            'biển cấm rẽ trái',
+            'biển giới hạn tốc độ việt nam',
+            'biển cấm xe máy'
+        ],
+        'warning': [
+            'biển báo cảnh báo giao thông việt nam',
+            'biển cảnh báo đường trơn',
+            'biển cảnh báo sạt lở',
+            'biển cảnh báo trẻ em',
+            'biển cảnh báo động vật'
+        ],
+        'mandatory': [
+            'biển báo hiệu lệnh giao thông việt nam',
+            'biển bắt buộc rẽ phải',
+            'biển bắt buộc đi thẳng',
+            'biển hiệu lệnh dành cho xe đạp',
+            'biển bắt buộc giảm tốc'
+        ],
+        'informative': [
+            'biển báo chỉ dẫn giao thông việt nam',
+            'biển chỉ dẫn bệnh viện',
+            'biển chỉ dẫn trạm xăng',
+            'biển chỉ dẫn đường cao tốc',
+            'biển chỉ dẫn khu dân cư'
+        ]
+    }
     
-    1. SCRAPE TỪ GOOGLE IMAGES (cơ bản, có thể bị giới hạn):
-       scraper.scrape_google_images('biển cấm đường', 'prohibitory', max_images=50)
+    total_scraped = 0
+    for category, kw_list in keywords.items():
+        for kw in kw_list:
+            scraped = scraper.scrape_google_images_selenium(kw, category, max_images=200)
+            if scraped < 50:
+                scraped += scraper.scrape_bing_images(kw, category, max_images=200 - scraped)
+            total_scraped += scraped
     
-    2. SCRAPE TỪ FILE DANH SÁCH URLs:
-       - Tạo file .txt với mỗi dòng là 1 URL ảnh
-       - Gọi: scraper.scrape_from_url_list('urls.txt', 'warning')
+    scraper.save_metadata()
     
-    3. SCRAPE TỪ WEBSITE CỤ THỂ:
-       scraper.scrape_website('https://example.com/traffic-signs', 'mandatory')
-    
-    Sau khi scrape xong, gọi:
-       scraper.save_metadata()
-    """)
-    
-    # Ví dụ: Scrape một số ảnh test
-    print("\n🧪 DEMO: Scrape một số ảnh test...")
-    
-    # Tạo file URLs mẫu nếu chưa có
-    sample_urls_file = Path('sample_urls.txt')
-    if not sample_urls_file.exists():
-        print("\n💡 Tạo file 'sample_urls.txt' và thêm URLs ảnh biển báo vào đó")
-        print("   Mỗi dòng một URL, ví dụ:")
-        print("   https://example.com/image1.jpg")
-        print("   https://example.com/image2.jpg")
-    
-    # Statistics
-    print("\n📊 THỐNG KÊ HIỆN TẠI:")
     stats = scraper.get_statistics()
-    total = sum(stats.values())
-    print(f"  Tổng số ảnh: {total}")
-    for category, count in stats.items():
-        print(f"  - {scraper.categories[category]}: {count} ảnh")
-    
-    print("\n" + "="*60)
-    print("✅ Sẵn sàng scrape dữ liệu!")
-    print("="*60)
-
+    print("\nTHỐNG KÊ SAU SCRAPE:")
+    for cat, count in stats.items():
+        print(f"  - {cat}: {count} ảnh")
+    print(f"  Tổng: {sum(stats.values())} ảnh")
 
 if __name__ == '__main__':
     main()
