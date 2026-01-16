@@ -204,11 +204,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'thong_ke_mean_median_std.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-<<<<<<< HEAD
-        print(f"✓ Đã lưu: {output_path}")
-=======
         print(f"Da luu: {output_path}")
->>>>>>> origin/Uyen
         plt.close()
         
         # 3. File size distribution
@@ -225,11 +221,7 @@ class DataVisualizer:
         plt.tight_layout()
         output_path = self.output_dir / 'phan_bo_file_size.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-<<<<<<< HEAD
-        print(f"✓ Đã lưu: {output_path}")
-=======
         print(f"Da luu: {output_path}")
->>>>>>> origin/Uyen
         plt.close()
 
     
@@ -584,11 +576,7 @@ class DataVisualizer:
         self.plot_statistics()             # 4. Statistics summary
         
         print("\n" + "="*60)
-<<<<<<< HEAD
-        print(f"Da tao xong 4 bieu do! Thu muc: {self.output_dir}")
-=======
         print(f"Da tao xong 4 bieu do. Thu muc: {self.output_dir}")
->>>>>>> origin/Uyen
         print("="*60)
 
 
