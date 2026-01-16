@@ -523,20 +523,35 @@ class DataVisualizer:
         plt.close()
     
     def generate_all_visualizations(self):
-        """Tạo 4 biểu đồ cần thiết"""
-        print("\nDang tao bieu do...")
-        print("="*60)
-        
+        """Tạo 5 biểu đồ trực quan hóa dữ liệu (KHÔNG dùng pie chart)"""
+        print("\nDang tao 5 bieu do...")
+        print("=" * 60)
+
+        # 1. Bảng mô tả (chỉ in console)
         self.create_summary_table()
-        
+
+        # 2. Bar chart: phân bố category
         self.plot_category_distribution()
+
+        # 3. Histogram: width & height
         self.plot_size_histogram()
+
+        # 4. Scatter: width vs height
         self.plot_scatter()
+
+        # 5. Boxplot + Heatmap (statistics)
         self.plot_statistics()
-        
-        print("\n" + "="*60)
-        print(f"Da tao xong 4 bieu do. Thu muc: {self.output_dir}")
-        print("="*60)
+
+        print("\n" + "=" * 60)
+        print("Da tao xong 5 bieu do:")
+        print("  1. phan_bo_category.png")
+        print("  2. histogram_kich_thuoc.png")
+        print("  3. bieu_do_width_height.png")
+        print("  4. boxplot_outliers.png")
+        print("  5. heatmap_correlation.png")
+        print(f"\nThu muc luu: {self.output_dir}")
+        print("=" * 60)
+
 
 
 def main():
