@@ -19,8 +19,7 @@ BATCH_SIZE = 32
 from data_collection.scraper import TrafficSignScraper
 from data_processing.cleaner import DataCleaner
 from visualization.visualizer import DataVisualizer
-from feature_extraction.extract_features import FeatureExtractor
-from modeling.train_baseline import BaselineTrainer
+
 
 
 def run_pipeline():

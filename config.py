@@ -13,7 +13,7 @@ import os
 #        python main.py
 
 # MongoDB connection string (doc tu ENV, neu khong co thi dung localhost)
-CONNECTION_STRING = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
+CONNECTION_STRING = os.environ.get("MONGODB_URI", "mongodb+srv://TuyetBang:Bang2203%40@cluster0.7qtzqjo.mongodb.net/?retryWrites=true&w=majority")
 
 DATABASE_NAME = os.environ.get("MONGODB_DB", "traffic_signs_db")
 COLLECTION_NAME = os.environ.get("MONGODB_COLLECTION", "images")
