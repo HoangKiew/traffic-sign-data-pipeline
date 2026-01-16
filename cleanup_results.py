@@ -11,9 +11,7 @@ from config import CONNECTION_STRING, DATABASE_NAME, COLLECTION_NAME
 
 
 DATA_PROCESSED_DIR = Path("data/processed")
-FEATURES_DIR = Path("data/features")
 REPORTS_DIR = Path("reports")
-MODELS_DIR = Path("models")
 
 
 def ask_yes_no(question: str) -> bool:
@@ -35,19 +33,13 @@ def cleanup_files():
     if ask_yes_no(f"Xoa thu muc processed images ({DATA_PROCESSED_DIR})?"):
         remove_dir(DATA_PROCESSED_DIR)
 
-    if ask_yes_no(f"Xoa thu muc features ({FEATURES_DIR})?"):
-        remove_dir(FEATURES_DIR)
-
-    if ask_yes_no(f"Xoa cac bao cao trong {REPORTS_DIR} (figures, models)?"):
+    if ask_yes_no(f"Xoa cac bao cao trong {REPORTS_DIR}?"):
         if REPORTS_DIR.is_dir():
             for sub in REPORTS_DIR.iterdir():
                 if sub.is_dir():
                     remove_dir(sub)
         else:
             print(f"Khong ton tai, bo qua: {REPORTS_DIR}")
-
-    if ask_yes_no(f"Xoa cac model da train trong {MODELS_DIR}?"):
-        remove_dir(MODELS_DIR)
 
 
 def cleanup_mongodb():
@@ -57,7 +49,7 @@ def cleanup_mongodb():
 
     print("\n=== CLEANUP MONGODB ===")
     if not ask_yes_no(
-        f"Xac nhan XOA TOAN BO du lieu trong MongoDB {DATABASE_NAME}.{COLLECTION_NAME}?"
+        f"Xac nhan xoa toan bo du lieu trong {DATABASE_NAME}.{COLLECTION_NAME}?"
     ):
         print("Bo qua xoa MongoDB.")
         return
@@ -67,11 +59,11 @@ def cleanup_mongodb():
     collection = db[COLLECTION_NAME]
     deleted = collection.delete_many({})
     client.close()
-    print(f"Da xoa {deleted.deleted_count} documents trong {DATABASE_NAME}.{COLLECTION_NAME}.")
+    print(f"Da xoa {deleted.deleted_count} documents.")
 
 
 def main():
-    print("CLEANUP KET QUA PIPELINE")
+    print("CLEANUP PIPELINE")
     print("=" * 60)
 
     cleanup_files()
