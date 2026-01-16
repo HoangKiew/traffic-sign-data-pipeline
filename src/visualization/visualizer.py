@@ -2,6 +2,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
+import sys
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 try:
     from pymongo import MongoClient
@@ -10,22 +15,18 @@ except ImportError:
     HAS_MONGO = False
     print("pymongo chưa cài đặt. Chạy: pip install pymongo để visualize từ MongoDB")
 
-# Luon dung config, khong fallback hard-code URI
 from config import CONNECTION_STRING, DATABASE_NAME, COLLECTION_NAME
 
 
 class DataVisualizer:
-    # Visualize traffic sign dataset
     
     def __init__(self, metadata_path='data/metadata.csv'):
         self.output_dir = Path('reports/figures')
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Set style
         sns.set_style('whitegrid')
         plt.rcParams['figure.figsize'] = (12, 6)
 
-        # Luon doc metadata tu MongoDB (khong dung CSV nua)
         print("Đọc metadata từ MongoDB...")
         self.df = self._load_from_mongodb()
         
@@ -40,7 +41,6 @@ class DataVisualizer:
         client = MongoClient(CONNECTION_STRING)
         db = client[DATABASE_NAME]
         collection = db[COLLECTION_NAME]
-        # Bỏ field image (rất nặng)
         cursor = collection.find({}, {"image": 0})
         docs = list(cursor)
         client.close()
@@ -91,7 +91,6 @@ class DataVisualizer:
         plt.ylabel('Số lượng ảnh', fontsize=12)
         plt.xticks(rotation=45, ha='right')
         
-        # Thêm số liệu trên mỗi cột
         for i, v in enumerate(category_counts):
             ax.text(i, v + 5, str(v), ha='center', fontweight='bold')
         
@@ -108,7 +107,6 @@ class DataVisualizer:
         """
         fig, axes = plt.subplots(1, 2, figsize=(14, 5))
         
-        # Width histogram
         axes[0].hist(self.df['width'], bins=30, color='skyblue', edgecolor='black')
         axes[0].set_title('Phan bo Width', fontsize=14, fontweight='bold')
         axes[0].set_xlabel('Width (pixels)', fontsize=11)
@@ -117,7 +115,6 @@ class DataVisualizer:
                        label=f'Mean: {self.df["width"].mean():.1f}')
         axes[0].legend()
         
-        # Height histogram
         axes[1].hist(self.df['height'], bins=30, color='lightcoral', edgecolor='black')
         axes[1].set_title('Phan bo Height', fontsize=14, fontweight='bold')
         axes[1].set_xlabel('Height (pixels)', fontsize=11)
@@ -139,7 +136,6 @@ class DataVisualizer:
         """
         plt.figure(figsize=(10, 8))
         
-        # Color by category
         categories = self.df['category'].unique()
         colors = plt.cm.Set3(range(len(categories)))
         
@@ -162,69 +158,47 @@ class DataVisualizer:
     
     def plot_statistics(self):
         """
-        Tạo 3 biểu đồ thống kê riêng biệt
+        Biểu đồ đặc biệt (theo slide) được tách thành 2 sơ đồ riêng:
+        - Boxplot: phát hiện ngoại lệ (width / height / size_kb)
+        - Heatmap: ma trận tương quan (width, height, size_kb, aspect_ratio)
         """
-        # 1. Box plots cho Width và Height
-        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        if 'aspect_ratio' not in self.df.columns:
+            self.df['aspect_ratio'] = self.df['width'] / self.df['height']
         
-        axes[0].boxplot([self.df['width']], tick_labels=['Width'])
-        axes[0].set_title('Box Plot - Width', fontweight='bold')
-        axes[0].set_ylabel('Pixels')
-        axes[0].grid(True, alpha=0.3)
-        
-        axes[1].boxplot([self.df['height']], tick_labels=['Height'])
-        axes[1].set_title('Box Plot - Height', fontweight='bold')
-        axes[1].set_ylabel('Pixels')
-        axes[1].grid(True, alpha=0.3)
-        
+        numeric_cols = ['width', 'height', 'size_kb', 'aspect_ratio']
+        data = self.df[numeric_cols]
+
+        plt.figure(figsize=(7, 6))
+        plt.boxplot(
+            [data['width'], data['height'], data['size_kb']],
+            tick_labels=['Width', 'Height', 'Size (KB)']
+        )
+        plt.title('Boxplot - Phát hiện ngoại lệ', fontweight='bold')
+        plt.ylabel('Giá trị', fontsize=11)
+        plt.grid(True, alpha=0.3, axis='y')
+        boxplot_path = self.output_dir / 'boxplot_outliers.png'
         plt.tight_layout()
-        output_path = self.output_dir / 'box_plot_width_height.png'
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Da luu: {output_path}")
-        plt.close()
-        
-        # 2. Mean, Median, Std comparison
-        stats_df = pd.DataFrame({
-            'Width': [self.df['width'].mean(), self.df['width'].median(), self.df['width'].std()],
-            'Height': [self.df['height'].mean(), self.df['height'].median(), self.df['height'].std()]
-        }, index=['Mean', 'Median', 'Std'])
-        
-        fig, ax = plt.subplots(figsize=(10, 6))
-        x = range(len(stats_df))
-        width = 0.35
-        ax.bar([i - width/2 for i in x], stats_df['Width'], width, label='Width', color='skyblue')
-        ax.bar([i + width/2 for i in x], stats_df['Height'], width, label='Height', color='lightcoral')
-        ax.set_title('Thong ke: Mean, Median, Std', fontweight='bold', fontsize=14)
-        ax.set_xticks(x)
-        ax.set_xticklabels(stats_df.index)
-        ax.set_ylabel('Pixels')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        output_path = self.output_dir / 'thong_ke_mean_median_std.png'
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Da luu: {output_path}")
-        plt.close()
-        
-        # 3. File size distribution
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.hist(self.df['size_kb'], bins=30, color='mediumseagreen', edgecolor='black')
-        ax.set_title('Phan bo kich thuoc file', fontweight='bold', fontsize=14)
-        ax.set_xlabel('Size (KB)')
-        ax.set_ylabel('Frequency')
-        ax.axvline(self.df['size_kb'].mean(), color='red', linestyle='--',
-                   label=f"Mean: {self.df['size_kb'].mean():.1f} KB")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        output_path = self.output_dir / 'phan_bo_file_size.png'
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Da luu: {output_path}")
+        plt.savefig(boxplot_path, dpi=300, bbox_inches='tight')
+        print(f"Da luu: {boxplot_path}")
         plt.close()
 
-    
+        plt.figure(figsize=(7, 6))
+        corr_data = data.corr()
+        sns.heatmap(
+            corr_data,
+            annot=True,
+            fmt='.2f',
+            cmap='coolwarm',
+            vmin=-1,
+            vmax=1
+        )
+        plt.title('Heatmap - Ma trận tương quan', fontweight='bold')
+        heatmap_path = self.output_dir / 'heatmap_correlation.png'
+        plt.tight_layout()
+        plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
+        print(f"Da luu: {heatmap_path}")
+        plt.close()
+
     def plot_file_size_by_category(self):
         """Kích thước file theo category"""
         plt.figure(figsize=(12, 6))
@@ -254,12 +228,10 @@ class DataVisualizer:
     
     def plot_aspect_ratio_distribution(self):
         """Phân bố Aspect Ratio (tỷ lệ khung hình)"""
-        # Tính aspect ratio
         self.df['aspect_ratio'] = self.df['width'] / self.df['height']
         
         fig, axes = plt.subplots(1, 2, figsize=(14, 5))
         
-        # Histogram aspect ratio
         axes[0].hist(self.df['aspect_ratio'], bins=30, color='purple', edgecolor='black', alpha=0.7)
         axes[0].axvline(1.0, color='red', linestyle='--', linewidth=2, label='Vuông (1:1)')
         axes[0].axvline(16/9, color='orange', linestyle='--', linewidth=2, label='Ngang (16:9)')
@@ -270,7 +242,6 @@ class DataVisualizer:
         axes[0].legend()
         axes[0].grid(True, alpha=0.3)
         
-        # Aspect ratio theo category
         categories = self.df['category'].unique()
         data_to_plot = [self.df[self.df['category'] == cat]['aspect_ratio'].values 
                         for cat in categories]
@@ -302,7 +273,6 @@ class DataVisualizer:
         x = range(len(categories))
         width = 0.35
         
-        # 1. Mean Width & Height theo category
         mean_width = [self.df[self.df['category'] == cat]['width'].mean() for cat in categories]
         mean_height = [self.df[self.df['category'] == cat]['height'].mean() for cat in categories]
         
@@ -315,7 +285,6 @@ class DataVisualizer:
         axes[0, 0].legend()
         axes[0, 0].grid(True, alpha=0.3, axis='y')
         
-        # 2. Mean File Size theo category
         mean_size = [self.df[self.df['category'] == cat]['size_kb'].mean() for cat in categories]
         axes[0, 1].bar(categories, mean_size, color='mediumseagreen', alpha=0.7)
         axes[0, 1].set_title('Kích thước File Trung bình theo Category', fontweight='bold')
@@ -323,7 +292,6 @@ class DataVisualizer:
         axes[0, 1].tick_params(axis='x', rotation=45)
         axes[0, 1].grid(True, alpha=0.3, axis='y')
         
-        # 3. Số lượng ảnh vs Kích thước TB
         counts = [len(self.df[self.df['category'] == cat]) for cat in categories]
         axes[1, 0].scatter(counts, mean_size, s=200, alpha=0.6, c=range(len(categories)), 
                           cmap='viridis')
@@ -335,7 +303,6 @@ class DataVisualizer:
         axes[1, 0].set_ylabel('Kích thước TB (KB)')
         axes[1, 0].grid(True, alpha=0.3)
         
-        # 4. Heatmap correlation
         numeric_cols = ['width', 'height', 'size_kb']
         if 'aspect_ratio' in self.df.columns:
             numeric_cols.append('aspect_ratio')
@@ -347,11 +314,10 @@ class DataVisualizer:
         axes[1, 1].set_xticklabels(corr_data.columns, rotation=45, ha='right')
         axes[1, 1].set_yticklabels(corr_data.columns)
         
-        # Thêm giá trị vào heatmap
         for i in range(len(corr_data.columns)):
             for j in range(len(corr_data.columns)):
-                text = axes[1, 1].text(j, i, f'{corr_data.iloc[i, j]:.2f}',
-                                     ha="center", va="center", color="black", fontweight='bold')
+                axes[1, 1].text(j, i, f'{corr_data.iloc[i, j]:.2f}',
+                                ha="center", va="center", color="black", fontweight='bold')
         
         axes[1, 1].set_title('Correlation Matrix', fontweight='bold')
         plt.colorbar(im, ax=axes[1, 1])
@@ -397,7 +363,6 @@ class DataVisualizer:
         plt.xticks(rotation=45, ha='right')
         plt.grid(True, alpha=0.3, axis='y')
         
-        # Thêm giá trị trên mỗi cột
         for bar, value in zip(bars, mean_area):
             plt.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
                     f'{value:,.0f}', ha='center', va='bottom', fontweight='bold')
@@ -423,7 +388,6 @@ class DataVisualizer:
         plt.xticks(rotation=45, ha='right')
         plt.grid(True, alpha=0.3, axis='y')
         
-        # Thêm giá trị trên mỗi cột
         for bar, value in zip(bars, mean_size):
             plt.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
                     f'{value:.1f}KB', ha='center', va='bottom', fontweight='bold')
@@ -446,7 +410,6 @@ class DataVisualizer:
         parts = plt.violinplot(data_to_plot, positions=range(len(categories)), 
                               showmeans=True, showmedians=True)
         
-        # Tô màu cho violin plots
         for pc, color in zip(parts['bodies'], colors[:len(categories)]):
             pc.set_facecolor(color)
             pc.set_alpha(0.7)
@@ -475,7 +438,6 @@ class DataVisualizer:
         parts = plt.violinplot(data_to_plot, positions=range(len(categories)), 
                               showmeans=True, showmedians=True)
         
-        # Tô màu cho violin plots
         for pc, color in zip(parts['bodies'], colors[:len(categories)]):
             pc.set_facecolor(color)
             pc.set_alpha(0.7)
@@ -510,7 +472,7 @@ class DataVisualizer:
         plt.ylabel('Kích thước File (KB)', fontsize=12)
         plt.legend(title='Category', fontsize=10)
         plt.grid(True, alpha=0.3)
-        plt.xscale('log')  # Log scale để dễ nhìn hơn
+        plt.xscale('log')
         
         plt.tight_layout()
         output_path = self.output_dir / 'area_vs_file_size_scatter.png'
@@ -544,12 +506,10 @@ class DataVisualizer:
         table.set_fontsize(11)
         table.scale(1, 2.5)
         
-        # Tô màu header
         for i in range(len(columns)):
             table[(0, i)].set_facecolor('#4ECDC4')
             table[(0, i)].set_text_props(weight='bold', color='white')
         
-        # Tô màu xen kẽ các dòng
         colors = ['#F0F0F0', 'white']
         for i in range(1, len(summary_data) + 1):
             for j in range(len(columns)):
@@ -563,21 +523,35 @@ class DataVisualizer:
         plt.close()
     
     def generate_all_visualizations(self):
-        """Tạo 4 biểu đồ cần thiết"""
-        print("\nDang tao bieu do...")
-        print("="*60)
-        
+        """Tạo 5 biểu đồ trực quan hóa dữ liệu (KHÔNG dùng pie chart)"""
+        print("\nDang tao 5 bieu do...")
+        print("=" * 60)
+
+        # 1. Bảng mô tả (chỉ in console)
         self.create_summary_table()
-        
-        # 4 biểu đồ cơ bản (theo yêu cầu slide)
-        self.plot_category_distribution()  # 1. Bar chart
-        self.plot_size_histogram()         # 2. Histogram
-        self.plot_scatter()                # 3. Scatter plot
-        self.plot_statistics()             # 4. Statistics summary
-        
-        print("\n" + "="*60)
-        print(f"Da tao xong 4 bieu do. Thu muc: {self.output_dir}")
-        print("="*60)
+
+        # 2. Bar chart: phân bố category
+        self.plot_category_distribution()
+
+        # 3. Histogram: width & height
+        self.plot_size_histogram()
+
+        # 4. Scatter: width vs height
+        self.plot_scatter()
+
+        # 5. Boxplot + Heatmap (statistics)
+        self.plot_statistics()
+
+        print("\n" + "=" * 60)
+        print("Da tao xong 5 bieu do:")
+        print("  1. phan_bo_category.png")
+        print("  2. histogram_kich_thuoc.png")
+        print("  3. bieu_do_width_height.png")
+        print("  4. boxplot_outliers.png")
+        print("  5. heatmap_correlation.png")
+        print(f"\nThu muc luu: {self.output_dir}")
+        print("=" * 60)
+
 
 
 def main():

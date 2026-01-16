@@ -2,6 +2,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from pathlib import Path
+import sys
 import time
 from urllib.parse import urljoin, urlparse
 from PIL import Image
@@ -14,13 +15,18 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+import config
+
 class TrafficSignScraper:
     
     def __init__(self, output_dir='data/raw'):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Các loại biển báo
         self.categories = {
             'prohibitory': 'Biển cấm',
             'warning': 'Biển cảnh báo', 
@@ -28,11 +34,9 @@ class TrafficSignScraper:
             'informative': 'Biển chỉ dẫn'
         }
         
-        # Tạo thư mục cho từng category
         for category in self.categories.keys():
             (self.output_dir / category).mkdir(exist_ok=True)
         
-        # Header tránh bị block
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
@@ -40,7 +44,6 @@ class TrafficSignScraper:
         self.metadata = []
     
     def download_image(self, url, save_path, timeout=10):
-        # Tải và kiểm tra ảnh
         try:
             response = requests.get(url, headers=self.headers, timeout=timeout)
             response.raise_for_status()
@@ -51,7 +54,6 @@ class TrafficSignScraper:
             
             img = Image.open(BytesIO(response.content))
             
-            # Bỏ ảnh quá nhỏ
             if img.width < 50 or img.height < 50:
                 print(f"Ảnh quá nhỏ ({img.width}x{img.height}): {url}")
                 return False
@@ -68,7 +70,6 @@ class TrafficSignScraper:
             return False
     
     def scrape_google_images_selenium(self, query, category, max_images=300, scroll_times=10):
-        # Scrape Google Images dùng Selenium
         print(f"\nTìm kiếm Google Images (Selenium): '{query}' (category: {category})")
         
         options = Options()
@@ -85,7 +86,6 @@ class TrafficSignScraper:
             search_box.send_keys(query)
             search_box.send_keys(Keys.ENTER)
             
-            # Cuộn để tải thêm ảnh
             for _ in range(scroll_times):
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
@@ -133,7 +133,6 @@ class TrafficSignScraper:
             driver.quit()
     
     def scrape_bing_images(self, query, category, max_images=300):
-        # Scrape Bing Images dùng requests + BS4
         print(f"\nTìm kiếm Bing Images: '{query}' (category: {category})")
         
         base_url = f"https://www.bing.com/images/search?q={query}"
@@ -174,9 +173,6 @@ class TrafficSignScraper:
         print(f"Đã scrape {count} ảnh cho '{query}'")
         return count
 
-    # ───────────────────────────
-    # Metadata helpers
-    # ───────────────────────────
     def save_metadata(self, path: str = 'data/scrape_metadata.json'):
         """Lưu metadata ảnh đã cào về ra file JSON (phục vụ kiểm tra/EDA)."""
         if not self.metadata:
@@ -203,7 +199,6 @@ def main():
     
     scraper = TrafficSignScraper()
     
-    # Danh sách từ khóa tìm kiếm
     keywords = {
         'prohibitory': [
             'biển báo cấm giao thông việt nam',
@@ -250,6 +245,7 @@ def main():
     for cat, count in stats.items():
         print(f"  - {cat}: {count} ảnh")
     print(f"  Tổng: {sum(stats.values())} ảnh")
+
 
 if __name__ == '__main__':
     main()
