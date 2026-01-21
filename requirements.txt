@@ -1,0 +1,4 @@
+pymongo
+opencv-python
+numpy
+ultralytics
