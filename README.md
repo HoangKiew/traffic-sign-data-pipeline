@@ -1,201 +1,315 @@
-# Data Pipeline - Xử lý dữ liệu biển báo giao thông
+# Traffic Sign Detection & Classification Pipeline
 
-Pipeline tự động thu thập, tiền xử lý, gán nhãn và chia tập dữ liệu hình ảnh biển báo giao thông.
+Hệ thống thu thập, xử lý và phân loại biển báo giao thông tự động sử dụng YOLO và Computer Vision.
 
-## 📋 Mục tiêu
+## 📋 Tính năng
 
-Tạo ra một tập dữ liệu sạch, đã được gán nhãn chính xác và chia tập (train/test) sẵn sàng cho việc training mô hình AI.
+- ✅ **Web Scraping**: Thu thập tự động 5000+ ảnh từ Google/Bing
+- ✅ **Preprocessing**: Khử nhiễu, cân bằng sáng, tăng nét
+- ✅ **Object Detection**: YOLO batch processing (10-20x faster)
+- ✅ **Classification**: Phân loại 5 classes dựa trên màu sắc
+- ✅ **Storage**: MinIO (ảnh) + MongoDB (metadata)
+- ✅ **Visualization**: 10 biểu đồ phân tích chi tiết
 
-## 🏗️ Kiến trúc Pipeline
+## 🎯 Kết quả
 
-```
-1. Thu thập dữ liệu (Data Collection)
-   ├── MinIO: Lưu trữ ảnh thô
-   └── MongoDB: Lưu trữ metadata
+- **Dataset**: 9,754 biển báo từ 3,220 ảnh
+- **Classes**: Cấm, Nguy hiểm, Hiệu lệnh, Chỉ dẫn, Khác
+- **Format**: YOLO labels (.txt)
+- **Success rate**: 56.3% (ảnh có biển báo)
 
-2. Tiền xử lý (Preprocessing)
-   ├── Khử nhiễu (Bilateral/Median Filter)
-   ├── Cân bằng sáng (CLAHE)
-   ├── Tăng cường độ sắc nét (Unsharp Masking)
-   └── Resize với padding
-
-3. Xử lý và Gán nhãn (Processing & Labeling)
-   ├── Detect: YOLO phát hiện biển báo
-   ├── Crop: Cắt biển báo từ ảnh
-   ├── Verify: VLM xác thực nhãn
-   └── Filter: Lọc bỏ nhãn sai
-
-4. Đóng gói (Finalizing)
-   ├── Chia train/test (80/20)
-   ├── Lưu ảnh và nhãn
-   └── Thống kê dataset
-```
-
-## 📁 Cấu trúc thư mục
-
-```
-traffic-sign-data-pipeline/
-├── config/
-│   ├── config.py              # Cấu hình chính
-│   └── .env.example           # Mẫu file cấu hình
-├── data_collection/
-│   └── collector.py           # Thu thập dữ liệu từ MinIO/MongoDB
-├── preprocessing/
-│   └── image_processor.py     # Tiền xử lý ảnh
-├── processing_labeling/
-│   ├── detector.py            # YOLO detection
-│   ├── cropper.py             # Crop biển báo
-│   ├── vlm_verifier.py        # VLM verification
-│   └── labeler.py             # Quy trình gán nhãn
-├── finalizing/
-│   └── dataset_splitter.py    # Chia tập và thống kê
-├── utils/
-│   └── database.py            # MinIO và MongoDB clients
-├── main.py                    # Script chính
-├── sample_data.py             # Tạo dữ liệu mẫu
-├── requirements.txt           # Dependencies
-└── README.md                  # File này
-```
+---
 
 ## 🚀 Cài đặt
 
-### 1. Cài đặt dependencies
+### 1. Clone repository
+
+```bash
+git clone https://github.com/HoangKiew/traffic-sign-data-pipeline.git
+cd traffic-sign-data-pipeline
+```
+
+### 2. Tạo virtual environment
+
+```bash
+# Windows
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# Linux/Mac
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 3. Cài đặt dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Cấu hình môi trường
-
-Sao chép file `.env.example` và tạo file `.env`:
+### 4. Khởi động MinIO và MongoDB (Docker)
 
 ```bash
-cp config/.env.example config/.env
+docker-compose up -d
 ```
 
-Chỉnh sửa `config/.env` với thông tin của bạn:
-
-```env
-# MinIO Configuration
-MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-
-# MongoDB Configuration
-MONGODB_URI=mongodb://localhost:27017/
-MONGODB_DB_NAME=traffic_signs_db
-```
-
-### 3. Khởi động MinIO và MongoDB
-
-**MinIO:**
+Kiểm tra services:
 ```bash
-# Docker
-docker run -p 9000:9000 -p 9001:9001 \
-  minio/minio server /data --console-address ":9001"
+docker ps
 ```
 
-**MongoDB:**
+### 5. Download YOLO model (tự động khi chạy lần đầu)
+
+Model YOLOv8n sẽ tự động download khi chạy script lần đầu.
+
+---
+
+## 📖 Cách sử dụng
+
+### Option 1: Chạy toàn bộ pipeline (Tự động)
+
 ```bash
-# Docker
-docker run -p 27017:27017 mongo
+python unified_pipeline.py
 ```
 
-## 💻 Sử dụng
+### Option 2: Chạy từng bước (Thủ công)
 
-### Bước 1: Chuẩn bị dữ liệu
-
-**Cách 1: Sử dụng dữ liệu mẫu (để test)**
+#### Bước 1: Thu thập dữ liệu
 ```bash
-python sample_data.py --num 10
+python download_from_web.py
 ```
+- Thu thập ~5000 ảnh từ Internet
+- Upload lên MinIO bucket `traffic-signs-raw`
+- Thời gian: ~30-60 phút
 
-**Cách 2: Upload dữ liệu thực tế**
-
-- Upload ảnh biển báo lên MinIO bucket `traffic-signs-raw`
-- Thêm metadata vào MongoDB collection `metadata` với format:
-```json
-{
-  "image_name": "traffic_sign_001.jpg",
-  "location": "Hanoi",
-  "road_type": "highway",
-  "weather": "sunny"
-}
+#### Bước 2: Lọc nhanh (Optional)
+```bash
+python fast_filter.py
 ```
+- Loại bỏ ảnh rác, trùng lặp
+- Thời gian: ~2-5 phút
 
-### Bước 2: Chạy Pipeline
-
+#### Bước 3: Tiền xử lý
 ```bash
 python main.py
 ```
+- Khử nhiễu, cân bằng sáng, tăng nét
+- Lọc ảnh không có biển báo
+- Upload lên MinIO bucket `traffic-signs-processed`
+- Thời gian: ~15-30 phút
 
-Pipeline sẽ tự động:
-1. ✅ Thu thập ảnh từ MinIO và metadata từ MongoDB
-2. ✅ Tiền xử lý ảnh (khử nhiễu, cân bằng sáng, tăng cường độ sắc nét)
-3. ✅ Phát hiện biển báo bằng YOLO
-4. ✅ Cắt và gán nhãn biển báo
-5. ✅ Xác thực nhãn bằng VLM
-6. ✅ Chia tập train/test (80/20)
-7. ✅ Lưu kết quả và tạo thống kê
+#### Bước 4: Detection & Classification
+```bash
+python fast_detection.py
+```
+- YOLO detection + Color classification
+- Tạo labels YOLO format
+- Lưu tại `datasets/labels/`
+- Thời gian: ~8-15 phút
 
-### Bước 3: Kiểm tra kết quả
+#### Bước 5: Visualization
+```bash
+python visualize_analytics.py
+```
+- Tạo 10 biểu đồ phân tích
+- Lưu tại `analytics_charts/`
+- Thời gian: ~1-2 phút
 
-Dataset được lưu tại thư mục `output/`:
+#### Bước 6: Upload MongoDB (Optional)
+```bash
+python label_data.py
+```
+- Lưu metadata vào MongoDB
+- Thời gian: ~2-5 phút
+
+---
+
+## 📁 Cấu trúc thư mục
 
 ```
-output/
-├── train/
-│   ├── images/          # Ảnh train
-│   └── labels/          # Nhãn train (.txt)
-└── test/
-    ├── images/          # Ảnh test
-    └── labels/          # Nhãn test (.txt)
+traffic-sign-data-pipeline/
+├── config/                    # Cấu hình
+│   ├── config.py
+│   ├── optimization_config.py
+│   └── web_sources_config.py
+├── data_collection/           # Web scraping
+│   └── web_scraper.py
+├── preprocessing/             # Tiền xử lý ảnh
+│   └── image_processor.py
+├── processing_labeling/       # Detection & labeling
+│   ├── detector.py
+│   └── labeler.py
+├── utils/                     # Utilities
+│   ├── database.py           # MinIO + MongoDB
+│   ├── logger.py
+│   └── performance_monitor.py
+├── download_from_web.py       # Script 1: Crawl
+├── fast_filter.py             # Script 2: Filter
+├── main.py                    # Script 3: Preprocess
+├── fast_detection.py          # Script 4: Detect
+├── label_data.py              # Script 5: Label
+├── visualize_analytics.py     # Script 6: Visualize
+├── unified_pipeline.py        # Chạy tất cả
+├── requirements.txt           # Dependencies
+└── README.md                  # Tài liệu này
 ```
 
-## ⚙️ Cấu hình nâng cao
+---
 
-Chỉnh sửa `config/config.py` để tùy chỉnh:
+## 🔧 Cấu hình
 
-- **Kích thước ảnh:** `IMAGE_TARGET_SIZE = (640, 640)`
-- **Tỷ lệ train/test:** `TRAIN_TEST_SPLIT_RATIO = 0.8`
-- **Ngưỡng confidence YOLO:** `YOLO_CONFIDENCE_THRESHOLD = 0.5`
-- **Model VLM:** `VLM_MODEL_NAME = "Salesforce/blip-image-captioning-base"`
+### MinIO (Object Storage)
+- **URL**: http://localhost:9000
+- **Console**: http://localhost:9001
+- **Username**: minioadmin
+- **Password**: minioadmin
 
-## 📊 Thống kê
+### MongoDB (Document Database)
+- **URL**: mongodb://localhost:27017
+- **Database**: traffic_signs_db
+- **Collection**: dataset_labels_v1
 
-Pipeline tự động tạo thống kê về:
-- Tổng số mẫu và số lớp
-- Phân bố mẫu theo từng lớp
-- Cảnh báo lớp có ít mẫu (< MIN_SAMPLES_PER_CLASS)
+### YOLO
+- **Model**: YOLOv8n (nano)
+- **Confidence**: 0.25
+- **Batch size**: 16
 
-## 🔧 Xử lý sự cố
+---
 
-### Lỗi kết nối MinIO/MongoDB
-- Kiểm tra service đã chạy chưa
-- Kiểm tra thông tin kết nối trong `.env`
+## 📊 Xem kết quả
 
-### Không phát hiện được biển báo
-- YOLO mặc định chỉ detect "stop sign" (class_id=11)
-- Cần fine-tune YOLO cho dataset biển báo cụ thể
-- Hoặc chỉnh sửa `filter_traffic_signs()` trong `detector.py`
+### 1. Xem ảnh trên MinIO Console
+```
+http://localhost:9001
+```
+- Bucket `traffic-signs-raw`: Ảnh gốc
+- Bucket `traffic-signs-processed`: Ảnh đã xử lý
 
-### VLM verification không hoạt động
-- Model VLM sẽ tự động tải từ HuggingFace
-- Nếu không có internet, pipeline sẽ bỏ qua verification
-- Có thể chỉnh `VLM_DEVICE = "cuda"` nếu có GPU
+### 2. Xem biểu đồ phân tích
+```bash
+# Mở thư mục
+cd analytics_charts
+```
 
-## 📝 Lưu ý
+### 3. Xem metadata trên MongoDB
+```bash
+docker exec -it mongo_server mongosh
 
-1. **YOLO Model:** Mặc định sử dụng YOLOv8n (nano). Có thể thay bằng model lớn hơn hoặc model đã fine-tune cho biển báo.
+use traffic_signs_db
+db.dataset_labels_v1.countDocuments()
+db.dataset_labels_v1.findOne()
+```
 
-2. **VLM Verification:** BLIP model có thể không chính xác 100%. Có thể thay bằng model khác hoặc bỏ qua bước này.
+### 4. Download ảnh về local
+```bash
+python view_images.py --view 10 --download
+```
 
-3. **Metadata:** Đảm bảo metadata trong MongoDB có trường `image_name` khớp với tên file trong MinIO.
+---
 
-## 📄 License
+## 🎨 Biểu đồ phân tích
+
+Script `visualize_analytics.py` tạo 10 biểu đồ:
+
+1. **class_count.png** - Số lượng theo loại
+2. **class_percentage.png** - Tỷ lệ % theo loại
+3. **size_distribution.png** - Phân bố kích thước
+4. **area_by_class.png** - Diện tích theo loại
+5. **width_vs_height.png** - Chiều rộng vs cao
+6. **aspect_ratio.png** - Tỷ lệ khung hình
+7. **location_heatmap.png** - Bản đồ nhiệt vị trí
+8. **location_by_class.png** - Vị trí theo loại
+9. **area_histogram.png** - Histogram diện tích
+10. **summary_statistics.png** - Bảng thống kê
+
+---
+
+## ⚙️ Tối ưu hóa
+
+### Batch Processing
+- YOLO: 16 ảnh/batch → **10-20x nhanh hơn**
+- MinIO upload: 100 ảnh/batch
+- MongoDB insert: Bulk operations
+
+### Error Recovery
+- Retry với exponential backoff (3 lần)
+- Skip on error (tiếp tục khi gặp lỗi)
+- Graceful shutdown (Ctrl+C lưu checkpoint)
+
+### Memory Management
+- Streaming thay vì load all
+- Giới hạn 1000 ảnh in-memory
+- Cleanup sau mỗi batch
+
+---
+
+## 🐛 Troubleshooting
+
+### Lỗi: MinIO connection refused
+```bash
+docker-compose restart minio
+```
+
+### Lỗi: MongoDB connection timeout
+```bash
+docker-compose restart mongo
+```
+
+### Lỗi: YOLO model not found
+Model sẽ tự động download. Nếu lỗi, download thủ công:
+```bash
+wget https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.pt
+```
+
+### Lỗi: Out of memory
+Giảm batch size trong `config/optimization_config.py`:
+```python
+YOLO_BATCH_SIZE = 8  # Giảm từ 16 xuống 8
+```
+
+---
+
+## 📚 Tài liệu
+
+- [OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md) - Hướng dẫn tối ưu hóa
+- [GIT_GUIDE.md](GIT_GUIDE.md) - Hướng dẫn Git
+- [PRESENTATION.md](PRESENTATION.md) - Bài thuyết trình
+
+---
+
+## 🤝 Đóng góp
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+## 📝 License
 
 MIT License
 
-## 👥 Tác giả
+---
 
-Data Mining Project - Năm 3 Kỳ 1
+## 👤 Tác giả
+
+**HoangKiew**
+- GitHub: [@HoangKiew](https://github.com/HoangKiew)
+- Repository: [traffic-sign-data-pipeline](https://github.com/HoangKiew/traffic-sign-data-pipeline)
+
+---
+
+## 🙏 Cảm ơn
+
+- [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics)
+- [MinIO](https://min.io/)
+- [MongoDB](https://www.mongodb.com/)
+- [OpenCV](https://opencv.org/)
+
+---
+
+## 📊 Thống kê Project
+
+- **Lines of Code**: ~4,500
+- **Files**: 39
+- **Dataset Size**: 9,754 objects
+- **Success Rate**: 56.3%
+- **Processing Time**: ~1-2 giờ cho 5000 ảnh
