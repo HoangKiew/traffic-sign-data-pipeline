@@ -1,0 +1,17 @@
+numpy<2.0.0
+opencv-python>=4.8.0
+pillow>=10.0.0
+ultralytics>=8.1.0
+torch>=2.1.0
+torchvision>=0.16.0
+transformers>=4.36.0
+accelerate>=0.25.0
+minio>=7.2.0
+pymongo>=4.6.0
+pandas>=2.1.0
+matplotlib>=3.8.0
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+icrawler>=0.6.6
+pyyaml>=6.0
