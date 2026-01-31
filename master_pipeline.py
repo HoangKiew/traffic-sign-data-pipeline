@@ -1,13 +1,12 @@
 import os
 import cv2
+import glob
 import numpy as np
 from tqdm import tqdm
 from ultralytics import YOLO
-import json
-from utils.database import MinIOClient, MongoDBClient
 
 # --- CẤU HÌNH ---
-IMG_BUCKET = "traffic-signs-processed"  # Đọc ảnh từ MinIO bucket này
+IMG_DIR = "datasets/images"       # Thư mục ảnh sạch
 LABEL_DIR = "datasets/labels"     # Thư mục nhãn (Hãy đảm bảo nó TRỐNG)
 MODEL_PATH = "yolov8n.pt"         # Model YOLO gốc
 MODEL_PATH_X = "yolov8x.pt"       # Model lớn hơn, chính xác hơn
@@ -57,21 +56,15 @@ def run_master():
     if not os.path.exists(LABEL_DIR): os.makedirs(LABEL_DIR)
     print("⏳ Đang tải YOLOv8n...")
     model = YOLO(MODEL_PATH)
-
-    # Đọc ảnh từ MinIO thay vì local
-    minio = MinIOClient()
-    all_images = minio.list_images(bucket=IMG_BUCKET)
-    print(f"🚀 BẮT ĐẦU XỬ LÝ TOÀN BỘ {len(all_images)} ẢNH từ MinIO...")
+    
+    img_files = glob.glob(os.path.join(IMG_DIR, "*.*"))
+    print(f"🚀 BẮT ĐẦU XỬ LÝ TOÀN BỘ {len(img_files)} ẢNH...")
 
     stats = {0:0, 1:0, 2:0, 3:0, 4:0}
     
-    for img_name in tqdm(all_images):
-        # Download ảnh từ MinIO
-        img_data = minio.download_image(img_name, bucket=IMG_BUCKET)
-        if not img_data:
-            continue
-        nparr = np.frombuffer(img_data, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    for img_path in tqdm(img_files):
+        # Đọc ảnh
+        img = cv2.imread(img_path)
         if img is None: continue
         h_img, w_img = img.shape[:2]
         
@@ -125,7 +118,7 @@ def run_master():
             
         # 4. Lưu file .txt
         if final_boxes:
-            base_name = os.path.splitext(os.path.basename(img_name))[0]
+            base_name = os.path.splitext(os.path.basename(img_path))[0]
             txt_path = os.path.join(LABEL_DIR, base_name + ".txt")
             
             with open(txt_path, "w") as f:
@@ -159,13 +152,10 @@ def run_compare_yolo():
     model_n = YOLO(MODEL_PATH_N)
     model_x = YOLO(MODEL_PATH_X)
 
-    compare_metadata = []
-
     for img_path in tqdm(img_files):
         img = cv2.imread(img_path)
         if img is None: continue
         h_img, w_img = img.shape[:2]
-        base_name = os.path.splitext(os.path.basename(img_path))[0]
 
         # Detect bằng YOLOv8n
         results_n = model_n(img, verbose=False, conf=CONF_THRESHOLD)
@@ -189,19 +179,13 @@ def run_compare_yolo():
                 cls_id = get_class_v2(crop)
                 boxes_x.append({'cls': cls_id, 'xyxy': [x1, y1, x2, y2]})
 
-        # Lưu metadata so sánh cho từng ảnh
-        compare_metadata.append({
-            "image_name": base_name,
-            "yolov8n": [{"class_id": b['cls'], "bbox": b['xyxy']} for b in boxes_n],
-            "yolov8x": [{"class_id": b['cls'], "bbox": b['xyxy']} for b in boxes_x]
-        })
-
         # Vẽ lên ảnh để so sánh
         img_compare = img.copy()
         img_compare = draw_boxes(img_compare, boxes_n, (0,255,0), "n:")
         img_compare = draw_boxes(img_compare, boxes_x, (0,0,255), "x:")
 
         # Lưu ảnh so sánh
+        base_name = os.path.splitext(os.path.basename(img_path))[0]
         cv2.imwrite(os.path.join(COMPARE_DIR, f"{base_name}_compare.jpg"), img_compare)
 
         # Lưu crop từng biển báo (cả 2 model)
@@ -214,160 +198,19 @@ def run_compare_yolo():
             crop = img[y1:y2, x1:x2]
             cv2.imwrite(os.path.join(COMPARE_DIR, f"{base_name}_x_{idx}.jpg"), crop)
 
-    # Lưu metadata so sánh ra file JSON
-    with open(os.path.join(COMPARE_DIR, "compare_metadata.json"), "w", encoding="utf-8") as f:
-        json.dump(compare_metadata, f, indent=2, ensure_ascii=False)
+        # Có thể thêm bước so sánh số lượng, vị trí, loại biển báo giữa 2 model
+        # ... (tùy ý mở rộng)
 
     print(f"✅ Đã lưu ảnh so sánh tại: {COMPARE_DIR}/")
-    print(f"✅ Đã lưu metadata so sánh tại: {COMPARE_DIR}/compare_metadata.json")
     print("Ảnh có khung xanh là YOLOv8n, khung đỏ là YOLOv8x.")
-
-def run_dual_yolo_labeling():
-    # Tạo 2 thư mục label riêng cho từng model
-    LABEL_DIR_N = "datasets/labels_n"
-    LABEL_DIR_X = "datasets/labels_x"
-    os.makedirs(LABEL_DIR_N, exist_ok=True)
-    os.makedirs(LABEL_DIR_X, exist_ok=True)
-
-    minio = MinIOClient()
-    all_images = minio.list_images(bucket=IMG_BUCKET)
-    print(f"🚀 Đang gán nhãn bằng 2 model YOLO cho {len(all_images)} ảnh...")
-
-    model_n = YOLO(MODEL_PATH)
-    model_x = YOLO(MODEL_PATH_X)
-
-    for img_name in tqdm(all_images):
-        img_data = minio.download_image(img_name, bucket=IMG_BUCKET)
-        if not img_data:
-            continue
-        nparr = np.frombuffer(img_data, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None: continue
-        h_img, w_img = img.shape[:2]
-        base_name = os.path.splitext(os.path.basename(img_name))[0]
-
-        # YOLOv8n
-        results_n = model_n(img, verbose=False, conf=CONF_THRESHOLD)
-        with open(os.path.join(LABEL_DIR_N, base_name + ".txt"), "w") as f_n:
-            for r in results_n:
-                for box in r.boxes:
-                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                    x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                    crop = img[y1:y2, x1:x2]
-                    if crop.size == 0: continue
-                    cls_id = get_class_v2(crop)
-                    xc = ((x1+x2)/2) / w_img
-                    yc = ((y1+y2)/2) / h_img
-                    w = (x2-x1) / w_img
-                    h = (y2-y1) / h_img
-                    f_n.write(f"{cls_id} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}\n")
-
-        # YOLOv8x
-        results_x = model_x(img, verbose=False, conf=CONF_THRESHOLD)
-        with open(os.path.join(LABEL_DIR_X, base_name + ".txt"), "w") as f_x:
-            for r in results_x:
-                for box in r.boxes:
-                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                    x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                    crop = img[y1:y2, x1:x2]
-                    if crop.size == 0: continue
-                    cls_id = get_class_v2(crop)
-                    xc = ((x1+x2)/2) / w_img
-                    yc = ((y1+y2)/2) / h_img
-                    w = (x2-x1) / w_img
-                    h = (y2-y1) / h_img
-                    f_x.write(f"{cls_id} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}\n")
-
-    print("✅ Đã gán nhãn bằng 2 model YOLO cho toàn bộ ảnh!")
-
-def run_dual_yolo_metadata():
-    """
-    Detect với cả 2 model YOLO cho mỗi ảnh, lưu metadata so sánh vào MongoDB và file JSON.
-    """
-    os.makedirs(COMPARE_DIR, exist_ok=True)
-    minio = MinIOClient()
-    mongo = MongoDBClient()
-    all_images = minio.list_images(bucket=IMG_BUCKET)
-    print(f"🚀 Đang detect & lưu metadata so sánh bằng 2 model YOLO cho {len(all_images)} ảnh...")
-
-    model_n = YOLO(MODEL_PATH)
-    model_x = YOLO(MODEL_PATH_X)
-
-    compare_metadata = []
-
-    for img_name in tqdm(all_images):
-        img_data = minio.download_image(img_name, bucket=IMG_BUCKET)
-        if not img_data:
-            continue
-        nparr = np.frombuffer(img_data, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None: continue
-        h_img, w_img = img.shape[:2]
-        base_name = os.path.splitext(os.path.basename(img_name))[0]
-
-        # YOLOv8n
-        results_n = model_n(img, verbose=False, conf=CONF_THRESHOLD)
-        boxes_n = []
-        for r in results_n:
-            for box in r.boxes:
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                crop = img[y1:y2, x1:x2]
-                if crop.size == 0: continue
-                cls_id = get_class_v2(crop)
-                conf = float(box.conf[0])
-                boxes_n.append({
-                    "class_id": cls_id,
-                    "bbox_xyxy": [x1, y1, x2, y2],
-                    "confidence": conf
-                })
-
-        # YOLOv8x
-        results_x = model_x(img, verbose=False, conf=CONF_THRESHOLD)
-        boxes_x = []
-        for r in results_x:
-            for box in r.boxes:
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                crop = img[y1:y2, x1:x2]
-                if crop.size == 0: continue
-                cls_id = get_class_v2(crop)
-                conf = float(box.conf[0])
-                boxes_x.append({
-                    "class_id": cls_id,
-                    "bbox_xyxy": [x1, y1, x2, y2],
-                    "confidence": conf
-                })
-
-        meta = {
-            "image_name": img_name,
-            "image_size": {"width": w_img, "height": h_img},
-            "yolov8n": boxes_n,
-            "yolov8x": boxes_x,
-            "created_at": str(datetime.now()),
-            "pipeline_stage": "dual_yolo_compare"
-        }
-        compare_metadata.append(meta)
-        # Lưu vào MongoDB
-        mongo.insert_metadata(COMPARE_METADATA_COLLECTION, meta)
-
-    # Lưu toàn bộ metadata ra file JSON
-    with open(os.path.join(COMPARE_DIR, "dual_yolo_compare_metadata.json"), "w", encoding="utf-8") as f:
-        json.dump(compare_metadata, f, indent=2, ensure_ascii=False)
-
-    print(f"✅ Đã lưu metadata so sánh vào MongoDB collection '{COMPARE_METADATA_COLLECTION}'")
-    print(f"✅ Đã lưu metadata so sánh vào file: {COMPARE_DIR}/dual_yolo_compare_metadata.json")
 
 if __name__ == "__main__":
     # Thêm lựa chọn chạy so sánh
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--compare", action="store_true", help="So sánh YOLOv8n vs YOLOv8x")
-    parser.add_argument("--dual-metadata", action="store_true", help="So sánh & lưu metadata 2 model YOLO vào MongoDB/JSON")
     args = parser.parse_args()
-    if args.dual_metadata:
-        run_dual_yolo_metadata()
-    elif args.compare:
+    if args.compare:
         run_compare_yolo()
     else:
         run_master()

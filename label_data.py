@@ -80,19 +80,8 @@ class LabelingPipeline:
                     width = (x2 - x1) * dw
                     height = (y2 - y1) * dh
 
-                    # Phân loại class_id dựa trên label_name nếu có
+                    # Giả định class_id = 0
                     class_id = 0
-                    if label_name == "prohibition":
-                        class_id = 0
-                    elif label_name == "warning":
-                        class_id = 1
-                    elif label_name == "command":
-                        class_id = 2
-                    elif label_name == "instruction":
-                        class_id = 3
-                    elif label_name == "other":
-                        class_id = 4
-
                     f.write(f"{class_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
 
                     mongo_labels.append({

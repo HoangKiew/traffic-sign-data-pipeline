@@ -9,16 +9,17 @@ import cv2
 import numpy as np
 import hashlib
 from tqdm import tqdm
+from datetime import datetime
 
 try:
-    from utils.database import MinIOClient
+    from utils.database import MinIOClient, MongoDBClient
     from processing_labeling.detector import TrafficSignDetector
     from preprocessing.image_processor import ImagePreprocessor
     from utils.logger import get_logger
     from config.optimization_config import IMAGE_PROCESSING_BATCH_SIZE
     logger = get_logger()
 except ImportError:
-    from utils.database import MinIOClient
+    from utils.database import MinIOClient, MongoDBClient
     from processing_labeling.detector import TrafficSignDetector
     from preprocessing.image_processor import ImagePreprocessor
     import logging
@@ -29,7 +30,9 @@ except ImportError:
 MIN_SIZE_KB = 10  # Remove images < 10KB
 CONF_FILTER = 0.3  # YOLO threshold for filtering
 PROCESSED_BUCKET = "traffic-signs-processed"  # MinIO bucket for processed images
-
+CROP_BUCKET_N = "traffic-signs-crop-n"
+CROP_BUCKET_X = "traffic-signs-crop-x"
+METADATA_COLLECTION = "crop_metadata_dual_yolo"
 
 class DataCleaningPipeline:
     """
@@ -37,19 +40,24 @@ class DataCleaningPipeline:
     Processes in-memory without saving to local disk
     """
     
-    def __init__(self, save_processed_to_minio=True):
+    def __init__(self, save_processed_to_minio=True, dual_yolo_classify=False):
         logger.section("Data Cleaning Pipeline")
         logger.info("Initializing...")
         
         self.minio = MinIOClient()
-        self.detector = TrafficSignDetector()
+        self.detector_n = TrafficSignDetector(model_path="yolov8n.pt")
+        self.detector_x = TrafficSignDetector(model_path="yolov8x.pt") if dual_yolo_classify else None
         self.preprocessor = ImagePreprocessor()
         self.hashes = set()
         self.save_processed_to_minio = save_processed_to_minio
+        self.dual_yolo_classify = dual_yolo_classify
+        self.crop_bucket_n = CROP_BUCKET_N
+        self.crop_bucket_x = CROP_BUCKET_X
+        self.mongo = MongoDBClient()
         
-        # Ensure processed bucket exists
         if save_processed_to_minio:
             self._ensure_processed_bucket()
+            self._ensure_crop_buckets()
         
         logger.info("Pipeline ready")
     
@@ -61,6 +69,16 @@ class DataCleaningPipeline:
                 logger.info(f"Created bucket: {PROCESSED_BUCKET}")
         except Exception as e:
             logger.warning(f"Bucket check failed: {e}")
+    
+    def _ensure_crop_buckets(self):
+        """Create crop buckets if not exists"""
+        for bucket in [self.crop_bucket_n, self.crop_bucket_x]:
+            try:
+                if not self.minio.client.bucket_exists(bucket):
+                    self.minio.client.make_bucket(bucket)
+                    logger.info(f"Created bucket: {bucket}")
+            except Exception as e:
+                logger.warning(f"Bucket check failed: {e}")
     
     def _get_hash(self, image_bytes):
         """Calculate MD5 hash for deduplication"""
@@ -129,29 +147,89 @@ class DataCleaningPipeline:
                     check_sharpness=True
                 )
                 
-                # 4. Detect traffic signs (filter out images without signs)
-                detections = self.detector.detect(processed_img)
-                valid_signs = [d for d in detections if d['confidence'] > CONF_FILTER]
+                # 4. Dual YOLO detect, crop, save crop & metadata
+                if self.dual_yolo_classify and self.detector_x:
+                    detections_n = self.detector_n.detect(processed_img)
+                    detections_x = self.detector_x.detect(processed_img)
+                    valid_signs_n = [d for d in detections_n if d['confidence'] > CONF_FILTER]
+                    valid_signs_x = [d for d in detections_x if d['confidence'] > CONF_FILTER]
+                    if not valid_signs_n and not valid_signs_x:
+                        stats['deleted_no_sign'] += 1
+                        continue
 
-                if not valid_signs:
-                    stats['deleted_no_sign'] += 1
-                    # KHÔNG xóa ảnh ở raw, chỉ không upload sang processed
-                    continue
-                
-                # 5. Save processed image to MinIO (optional)
+                    # Crop & save for YOLOv8n
+                    for idx, det in enumerate(valid_signs_n):
+                        crop = self._crop_box(processed_img, det['bbox'])
+                        crop_name = f"n_{os.path.splitext(img_name)[0]}_{idx}.jpg"
+                        _, encoded = cv2.imencode('.jpg', crop)
+                        self.minio.upload_image(
+                            crop_name, encoded.tobytes(), bucket=self.crop_bucket_n
+                        )
+                        # Save metadata
+                        meta = {
+                            "image_name": img_name,
+                            "crop_name": crop_name,
+                            "model": "yolov8n",
+                            "bbox": [float(x) for x in det['bbox']],
+                            "confidence": float(det['confidence']),
+                            "label": det.get('label', ''),
+                            "created_at": datetime.now(),
+                        }
+                        self.mongo.insert_metadata(METADATA_COLLECTION, meta)
+
+                    # Crop & save for YOLOv8x
+                    for idx, det in enumerate(valid_signs_x):
+                        crop = self._crop_box(processed_img, det['bbox'])
+                        crop_name = f"x_{os.path.splitext(img_name)[0]}_{idx}.jpg"
+                        _, encoded = cv2.imencode('.jpg', crop)
+                        self.minio.upload_image(
+                            crop_name, encoded.tobytes(), bucket=self.crop_bucket_x
+                        )
+                        meta = {
+                            "image_name": img_name,
+                            "crop_name": crop_name,
+                            "model": "yolov8x",
+                            "bbox": [float(x) for x in det['bbox']],
+                            "confidence": float(det['confidence']),
+                            "label": det.get('label', ''),
+                            "created_at": datetime.now(),
+                        }
+                        self.mongo.insert_metadata(METADATA_COLLECTION, meta)
+
+                else:
+                    detections = self.detector_n.detect(processed_img)
+                    valid_signs = [d for d in detections if d['confidence'] > CONF_FILTER]
+                    if not valid_signs:
+                        stats['deleted_no_sign'] += 1
+                        continue
+                    # Crop & save for YOLOv8n only
+                    for idx, det in enumerate(valid_signs):
+                        crop = self._crop_box(processed_img, det['bbox'])
+                        crop_name = f"n_{os.path.splitext(img_name)[0]}_{idx}.jpg"
+                        _, encoded = cv2.imencode('.jpg', crop)
+                        self.minio.upload_image(
+                            crop_name, encoded.tobytes(), bucket=self.crop_bucket_n
+                        )
+                        meta = {
+                            "image_name": img_name,
+                            "crop_name": crop_name,
+                            "model": "yolov8n",
+                            "bbox": [float(x) for x in det['bbox']],
+                            "confidence": float(det['confidence']),
+                            "label": det.get('label', ''),
+                            "created_at": datetime.now(),
+                        }
+                        self.mongo.insert_metadata(METADATA_COLLECTION, meta)
+
+                # Save processed image to MinIO (optional, for visualization)
                 if self.save_processed_to_minio:
-                    # Encode processed image
                     _, encoded = cv2.imencode('.jpg', processed_img)
-                    processed_data = encoded.tobytes()
-                    
-                    # Upload to processed bucket
                     processed_name = f"processed_{img_name}"
                     self.minio.upload_image(
                         processed_name, 
-                        processed_data, 
+                        encoded.tobytes(), 
                         bucket=PROCESSED_BUCKET
                     )
-                
                 stats['processed'] += 1
                 
             except Exception as e:
@@ -195,10 +273,15 @@ if __name__ == "__main__":
         action="store_true",
         help="Don't save processed images to MinIO (just filter)"
     )
-    # Xóa flag --delete-no-sign vì không còn dùng
+    parser.add_argument(
+        "--dual-yolo-classify",
+        action="store_true",
+        help="Dùng 2 model YOLO để detect & phân loại song song"
+    )
     args = parser.parse_args()
     
     pipeline = DataCleaningPipeline(
-        save_processed_to_minio=not args.no_save_processed
+        save_processed_to_minio=not args.no_save_processed,
+        dual_yolo_classify=args.dual_yolo_classify
     )
     pipeline.run()

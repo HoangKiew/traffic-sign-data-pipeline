@@ -1,84 +1,17 @@
-import sys
+"""
+High Volume Web Scraper for Traffic Signs (Working 2026 - Bing + Google fallback)
+- Giữ nguyên icrawler gốc để crawl được
+- Thay emoji bằng text để tránh UnicodeEncodeError trên Windows
+- Tăng rate limit nhẹ để giảm block
+- XÓA SẠCH temp_dir trước mỗi từ khóa để tránh lỗi icrawler không lưu file mới
+- Comment Google nếu fail nhiều
+"""
+
 import os
 import shutil
 import hashlib
 import time
-import logging
-import types
-import threading
-
-# ────────────────────────────────────────────────────────────────
-#                     FIX ICRAWLER THREAD ERRORS (2026)
-# ────────────────────────────────────────────────────────────────
-
-class DummyFile:
-    def write(self, x): pass
-    def flush(self): pass
-
-# Redirect stderr sớm nhất có thể (ẩn lỗi từ import icrawler)
-original_stderr = sys.stderr
-sys.stderr = DummyFile()
-
 from icrawler.builtin import BingImageCrawler, GoogleImageCrawler
-
-# Khôi phục stderr sau import (nếu cần log khác)
-sys.stderr = original_stderr
-
-# Tắt logging icrawler triệt để
-logging.getLogger("icrawler").setLevel(logging.WARNING)
-logging.getLogger("icrawler.parser").setLevel(logging.WARNING)
-logging.getLogger("icrawler.downloader").setLevel(logging.WARNING)
-logging.getLogger("icrawler.feeder").setLevel(logging.WARNING)
-logging.getLogger("icrawler.crawler").setLevel(logging.WARNING)
-
-# Monkey-patch Parser.worker_exec đúng cách
-import icrawler.parser
-
-def safe_worker_exec(self, response, **kwargs):
-    try:
-        result = self.parse(response, **kwargs)
-        if result is None:
-            return
-        for task in result:
-            if task is not None:
-                self.output_queue.put(task)
-    except TypeError as te:
-        msg = str(te).lower()
-        if any(phrase in msg for phrase in [
-            "nonetype object is not iterable",
-            "not subscriptable",
-            "missing",
-            "positional argument",
-            "response"
-        ]):
-            return  # im lặng
-        raise
-    except Exception:
-        # Các lỗi khác (timeout, connection...) vẫn để mặc định hoặc log nếu cần
-        pass
-
-
-# Gán lại method chuẩn (giữ bound method)
-icrawler.parser.Parser.worker_exec = types.MethodType(
-    safe_worker_exec,
-    icrawler.parser.Parser
-)
-
-# Hook excepthook để ẩn traceback thread của icrawler
-def icrawler_silent_excepthook(args):
-    if args.exc_type is TypeError:
-        msg = str(args.exc_value).lower()
-        if any(p in msg for p in ["nonetype", "not iterable", "missing", "positional argument", "response"]):
-            return  # không in gì cả
-    # Các lỗi khác vẫn in (hoặc comment dòng dưới nếu muốn tắt hết)
-    sys.__excepthook__(args)
-
-threading.excepthook = icrawler_silent_excepthook
-
-# ────────────────────────────────────────────────────────────────
-#                             CODE CHÍNH
-# ────────────────────────────────────────────────────────────────
-
 from utils.database import MinIOClient
 
 try:
@@ -91,12 +24,11 @@ try:
 except ImportError:
     import logging
     logger = logging.getLogger(__name__)
-    SCRAPER_RATE_LIMIT = 1.2          # tăng nhẹ để giảm lỗi Google
-    SCRAPER_MAX_IMAGES_PER_KEYWORD = 200
+    SCRAPER_RATE_LIMIT = 2.0          # Tăng từ 0.5 lên 2s để an toàn hơn
+    SCRAPER_MAX_IMAGES_PER_KEYWORD = 150  # Giảm nhẹ để tránh block nhanh
     SCRAPER_TIMEOUT = 15
     SCRAPER_SKIP_ON_ERROR = True
     DATABASE_BATCH_SIZE = 100
-
 
 class HighVolumeScraper:
     """Optimized scraper with error handling and batch uploads"""
@@ -110,7 +42,6 @@ class HighVolumeScraper:
             'total_skipped': 0,
             'total_errors': 0
         }
-        self.interrupted = False
 
     def crawl(self, keywords, max_num=SCRAPER_MAX_IMAGES_PER_KEYWORD):
         temp_dir = "temp_crawl"
@@ -119,74 +50,74 @@ class HighVolumeScraper:
         logger.section("Starting Web Scraping Campaign")
         logger.info(f"Keywords: {len(keywords)}")
         logger.info(f"Max images per keyword: {max_num}")
-        logger.info(f"Rate limit: {SCRAPER_RATE_LIMIT}s")
+        logger.info(f"Rate limit: {SCRAPER_RATE_LIMIT}s between requests")
 
         batch_buffer = []
         
-        try:
-            for idx, kw in enumerate(keywords, 1):
-                if self.interrupted:
-                    logger.warning("Scraping interrupted by user (Ctrl+C).")
-                    break
+        for idx, kw in enumerate(keywords, 1):
+            logger.info(f"[{idx}/{len(keywords)}] Crawling keyword: '{kw}'")
+            
+            try:
+                # XÓA SẠCH temp_dir TRƯỚC MỖI TỪ KHÓA ĐỂ ĐẢM BẢO ẢNH MỚI ĐƯỢC LƯU
+                for f in os.listdir(temp_dir):
+                    try:
+                        os.remove(os.path.join(temp_dir, f))
+                    except Exception:
+                        pass
 
-                logger.info(f"\n[{idx}/{len(keywords)}] Crawling keyword: '{kw}'")
+                # Crawl from Bing (ưu tiên)
+                self._crawl_bing(kw, max_num, temp_dir)
                 
-                try:
-                    self._crawl_bing(kw, max_num, temp_dir)
-                    
-                    # Google: giảm số lượng + rate limit cao hơn → giảm ban & lỗi parser
-                    self._crawl_google(kw, int(max_num * 0.5), temp_dir)
-                    
-                    batch_buffer = self._process_temp_images(temp_dir, kw, batch_buffer)
-                    
-                    time.sleep(SCRAPER_RATE_LIMIT)
-                    
-                except KeyboardInterrupt:
-                    logger.warning("Interrupted by user (Ctrl+C).")
-                    self.interrupted = True
-                    break
-                except Exception as e:
-                    logger.error(f"Error crawling '{kw}': {str(e)[:200]}")
-                    if not SCRAPER_SKIP_ON_ERROR:
-                        raise
-                    self.stats['total_errors'] += 1
-        except KeyboardInterrupt:
-            logger.warning("Interrupted (outer).")
-            self.interrupted = True
-
-        if batch_buffer and not self.interrupted:
+                # Crawl from Google (giảm số lượng, comment nếu fail nhiều)
+                # self._crawl_google(kw, int(max_num * 0.5), temp_dir)  # <-- Comment nếu Google fail
+                
+                batch_buffer = self._process_temp_images(temp_dir, kw, batch_buffer)
+                
+                time.sleep(SCRAPER_RATE_LIMIT)
+                
+            except KeyboardInterrupt:
+                logger.warning("Scraping interrupted by user (Ctrl+C)")
+                break
+            except Exception as e:
+                logger.error(f"Error crawling '{kw}': {str(e)}")
+                if not SCRAPER_SKIP_ON_ERROR:
+                    raise
+                self.stats['total_errors'] += 1
+        
+        if batch_buffer:
             self._upload_batch(batch_buffer)
         
         try:
             shutil.rmtree(temp_dir)
-        except:
-            logger.warning("Cleanup temp dir failed")
-
+        except Exception as e:
+            logger.warning(f"Cleanup failed: {e}")
+        
         self._print_summary()
 
     def _crawl_bing(self, keyword, max_num, temp_dir):
         try:
-            logger.info("  → Bing: crawling...")
-            crawler = BingImageCrawler(storage={'root_dir': temp_dir})
-            crawler.crawl(keyword=keyword, max_num=max_num, overwrite=True)
-            logger.info("  ✓ Bing: completed")
+            logger.info("  -> Bing: crawling...")
+            bing = BingImageCrawler(storage={'root_dir': temp_dir})
+            bing.crawl(keyword=keyword, max_num=max_num, overwrite=True)
+            logger.info("  [OK] Bing: completed")
         except Exception as e:
-            logger.warning(f"  ✗ Bing failed: {str(e)[:150]}")
+            logger.warning(f"  [Fail] Bing: {str(e)}")
 
     def _crawl_google(self, keyword, max_num, temp_dir):
         try:
-            logger.info("  → Google: crawling...")
-            crawler = GoogleImageCrawler(storage={'root_dir': temp_dir})
-            crawler.crawl(keyword=keyword, max_num=max_num, overwrite=True)
-            logger.info("  ✓ Google: completed")
+            logger.info("  -> Google: crawling...")
+            google = GoogleImageCrawler(storage={'root_dir': temp_dir})
+            google.crawl(keyword=keyword, max_num=max_num, overwrite=True)
+            logger.info("  [OK] Google: completed")
         except Exception as e:
-            logger.warning(f"  ✗ Google failed: {str(e)[:150]}")
+            logger.warning(f"  [Fail] Google: {str(e)}")
 
     def _process_temp_images(self, temp_dir, keyword, batch_buffer):
         processed = 0
         
-        for filename in list(os.listdir(temp_dir)):
+        for filename in os.listdir(temp_dir):
             filepath = os.path.join(temp_dir, filename)
+            
             if not os.path.isfile(filepath):
                 continue
             
@@ -210,9 +141,9 @@ class HighVolumeScraper:
                 if len(batch_buffer) >= DATABASE_BATCH_SIZE:
                     self._upload_batch(batch_buffer)
                     batch_buffer = []
-                    
+                
             except Exception as e:
-                logger.debug(f"Process error {filename}: {e}")
+                logger.debug(f"Error processing {filename}: {e}")
                 self.stats['total_errors'] += 1
             finally:
                 if os.path.exists(filepath):
@@ -222,7 +153,7 @@ class HighVolumeScraper:
                         pass
         
         if processed > 0:
-            logger.info(f"  ✓ Processed: {processed} images")
+            logger.info(f"  [OK] Processed: {processed} images")
         
         return batch_buffer
 
@@ -230,28 +161,30 @@ class HighVolumeScraper:
         if not self.minio or not batch:
             return
         
-        logger.info(f"  → Uploading batch ({len(batch)} imgs)...")
+        logger.info(f"  -> Uploading batch of {len(batch)} images...")
         
         try:
             results = self.minio.upload_images_batch(batch)
-            success = sum(1 for v in results.values() if v)
-            self.stats['total_uploaded'] += success
+            success_count = sum(1 for v in results.values() if v)
+            self.stats['total_uploaded'] += success_count
             
-            if success < len(batch):
-                logger.warning(f"  ⚠️ {len(batch)-success} failed in batch")
+            if success_count < len(batch):
+                failed = len(batch) - success_count
+                logger.warning(f"  [Warn] {failed} uploads failed in batch")
             else:
-                logger.info("  ✓ Batch uploaded OK")
+                logger.info("  [OK] Batch uploaded successfully")
+                
         except Exception as e:
             logger.error(f"Batch upload error: {e}")
             self.stats['total_errors'] += len(batch)
 
     def _print_summary(self):
         logger.section("Scraping Campaign Summary")
-        logger.info(f"Total crawled : {self.stats['total_crawled']}")
-        logger.info(f"Total uploaded : {self.stats['total_uploaded']}")
-        logger.info(f"Total skipped  : {self.stats['total_skipped']}")
-        logger.info(f"Total errors   : {self.stats['total_errors']}")
+        logger.info(f"Total crawled:  {self.stats['total_crawled']}")
+        logger.info(f"Total uploaded: {self.stats['total_uploaded']}")
+        logger.info(f"Total skipped:  {self.stats['total_skipped']}")
+        logger.info(f"Total errors:   {self.stats['total_errors']}")
         
         if self.stats['total_crawled'] > 0:
-            rate = (self.stats['total_uploaded'] / self.stats['total_crawled']) * 100
-            logger.info(f"Success rate   : {rate:.1f}%")
+            success_rate = (self.stats['total_uploaded'] / self.stats['total_crawled']) * 100
+            logger.info(f"Success rate:   {success_rate:.1f}%")
