@@ -132,9 +132,10 @@ class DataCleaningPipeline:
                 # 4. Detect traffic signs (filter out images without signs)
                 detections = self.detector.detect(processed_img)
                 valid_signs = [d for d in detections if d['confidence'] > CONF_FILTER]
-                
+
                 if not valid_signs:
                     stats['deleted_no_sign'] += 1
+                    # KHÔNG xóa ảnh ở raw, chỉ không upload sang processed
                     continue
                 
                 # 5. Save processed image to MinIO (optional)
@@ -194,7 +195,7 @@ if __name__ == "__main__":
         action="store_true",
         help="Don't save processed images to MinIO (just filter)"
     )
-    
+    # Xóa flag --delete-no-sign vì không còn dùng
     args = parser.parse_args()
     
     pipeline = DataCleaningPipeline(

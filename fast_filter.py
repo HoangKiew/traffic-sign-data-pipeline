@@ -75,14 +75,14 @@ class FastFilter:
             return "error"
 
     def run(self):
-        print(f"🚀 BẮT ĐẦU LỌC NHANH (FAST FILTER)")
+        print(f"RUN BẮT ĐẦU LỌC NHANH (FAST FILTER)")
         print(f"   • Min Size: {MIN_FILE_SIZE_KB} KB")
         print(f"   • Min Res:  {MIN_RESOLUTION}")
         print(f"   • Ratio:    {ASPECT_RATIO_RANGE}")
         print("-" * 50)
 
         all_images = self.minio.list_images()
-        print(f"📦 Tìm thấy {len(all_images)} ảnh trong kho.")
+        print(f"BOX Tìm thấy {len(all_images)} ảnh trong kho.")
 
         stats = {
             "kept": 0,
@@ -105,13 +105,13 @@ class FastFilter:
                 stats[res] += 1
 
         print("\n" + "="*50)
-        print("📊 KẾT QUẢ SAU KHI LỌC NHANH:")
-        print(f"   ✅ Giữ lại:        {stats['kept']} ảnh")
-        print(f"   🗑️ Xóa (Quá nhỏ):   {stats['deleted_small']}")
-        print(f"   🗑️ Xóa (Trùng lặp): {stats['deleted_duplicate']}")
-        print(f"   🗑️ Xóa (Độ phân giải thấp): {stats['deleted_low_res']}")
-        print(f"   🗑️ Xóa (Tỷ lệ dị dạng):     {stats['deleted_bad_ratio']}")
-        print(f"   ⚠️ Lỗi file:        {stats['deleted_error']}")
+        print("STAT KẾT QUẢ SAU KHI LỌC NHANH:")
+        print(f"   OK Giữ lại:        {stats['kept']} ảnh")
+        print(f"   DEL Xóa (Quá nhỏ):   {stats['deleted_small']}")
+        print(f"   DEL Xóa (Trùng lặp): {stats['deleted_duplicate']}")
+        print(f"   DEL Xóa (Độ phân giải thấp): {stats['deleted_low_res']}")
+        print(f"   DEL Xóa (Tỷ lệ dị dạng):     {stats['deleted_bad_ratio']}")
+        print(f"   WARNING Lỗi file:        {stats['deleted_error']}")
         print("="*50)
 
 if __name__ == "__main__":

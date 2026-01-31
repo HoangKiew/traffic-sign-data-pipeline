@@ -41,7 +41,7 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 3. Cài đặt dependencies
+### 3. Cài đặt dependencies (BẮT BUỘC: Cài thư viện Python, bao gồm minio)
 
 ```bash
 pip install -r requirements.txt
@@ -313,3 +313,79 @@ MIT License
 - **Dataset Size**: 9,754 objects
 - **Success Rate**: 56.3%
 - **Processing Time**: ~1-2 giờ cho 5000 ảnh
+
+## 🧪 So sánh kết quả nhận diện giữa 2 mô hình YOLO
+
+Pipeline hỗ trợ chạy song song 2 mô hình YOLO (YOLOv8n và YOLOv8x) để đánh giá chất lượng nhận diện biển báo giao thông.
+
+- **YOLOv8n**: Model nhẹ, tốc độ nhanh, phù hợp cho thiết bị hạn chế tài nguyên.
+- **YOLOv8x**: Model lớn, chính xác cao hơn, phù hợp cho đánh giá chất lượng.
+
+### Cách chạy so sánh:
+
+```bash
+python master_pipeline.py --compare
+```
+
+- Ảnh kết quả sẽ được lưu tại thư mục `compare_results/`
+- Khung **xanh lá**: Kết quả nhận diện của YOLOv8n
+- Khung **đỏ**: Kết quả nhận diện của YOLOv8x
+- Có thể so sánh số lượng, vị trí, loại biển báo giữa hai mô hình.
+
+### Ý nghĩa:
+
+- Giúp đánh giá mô hình nào phù hợp hơn cho bài toán nhận diện biển báo giao thông thực tế.
+- Phát hiện các trường hợp mô hình nhận diện khác nhau (trùng, thiếu, thừa).
+- Hỗ trợ kiểm tra chất lượng dữ liệu và pipeline.
+
+---
+
+# Luồng hoạt động pipeline hiện tại
+
+## 1. Web Scraping (download_from_web.py)
+- **Tự động crawl ảnh** từ Google/Bing với nhiều từ khóa.
+- Ảnh được upload lên MinIO bucket `traffic-signs-raw`.
+
+## 2. Fast Filtering (fast_filter.py)
+- **Lọc ảnh rác, trùng lặp, quá nhỏ, tỷ lệ dị dạng** trực tiếp trên MinIO bucket `traffic-signs-raw`.
+- Ảnh không đạt sẽ bị xóa khỏi bucket này.
+
+## 3. Data Cleaning & Preprocessing (main.py)
+- **Tiền xử lý ảnh** (cân bằng sáng, tăng nét, khử nhiễu) trên ảnh từ MinIO bucket `traffic-signs-raw`.
+- **Detect biển báo** bằng YOLO, chỉ giữ ảnh có biển báo.
+- **Upload ảnh đã xử lý** lên MinIO bucket `traffic-signs-processed`.
+- **Không xóa ảnh gốc** ở `traffic-signs-raw` (chỉ không upload sang processed nếu không có biển báo).
+
+## 4. Detection & Classification (master_pipeline.py hoặc fast_detection.py)
+- **Detect biển báo** trên ảnh từ MinIO bucket `traffic-signs-processed` bằng YOLO.
+- **Phân loại loại biển báo** (Cấm, Nguy hiểm, Hiệu lệnh, Chỉ dẫn, Khác) dựa trên màu sắc.
+- **Lưu file nhãn YOLO** vào `datasets/labels/`.
+
+## 5. (Tùy chọn) So sánh 2 model YOLO (master_pipeline.py --dual-metadata)
+- **Detect song song bằng 2 model YOLO** (yolov8n, yolov8x) cho từng ảnh.
+- **Lưu metadata so sánh** (kết quả từng model) vào MongoDB và file JSON.
+
+## 6. Labeling & Database Upload (label_data.py)
+- **Gán nhãn lại** (nếu cần) và **upload metadata** (bounding box, class, confidence, ... của từng object) lên MongoDB.
+
+## 7. Visualization (visualize_analytics.py)
+- **Tạo biểu đồ phân tích** dataset (phân bố class, kích thước, vị trí, ...).
+
+---
+
+## **Tóm tắt dữ liệu**
+- **Ảnh gốc**: MinIO bucket `traffic-signs-raw` (luôn giữ nguyên, không xóa).
+- **Ảnh đã xử lý**: MinIO bucket `traffic-signs-processed` (chỉ chứa ảnh có biển báo).
+- **Nhãn YOLO**: `datasets/labels/`
+- **Metadata**: MongoDB (collection `dataset_labels_v1`), so sánh 2 model: `yolo_compare_metadata`
+- **Biểu đồ**: `analytics_charts/`
+
+---
+
+## **Luồng tổng quát**
+1. **Crawl ảnh** → 2. **Lọc rác** → 3. **Tiền xử lý & lọc biển báo** → 4. **Detect & phân loại** → 5. **Gán nhãn & upload metadata** → 6. **Phân tích/visualize**
+
+**Lưu ý:**  
+- Ảnh gốc ở MinIO bucket `traffic-signs-raw` **luôn giữ nguyên, không xóa**.
+- Chỉ ảnh hợp lệ (có biển báo) mới được upload sang bucket `traffic-signs-processed`.
+- Nếu cần dọn dẹp, chỉ nên dọn ở bucket processed.

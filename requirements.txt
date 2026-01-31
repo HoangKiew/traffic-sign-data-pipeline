@@ -1,14 +1,28 @@
-numpy<2.0.0
-opencv-python>=4.8.0
+# requirements.txt (cập nhật cho Python 3.13 - Windows venv)
+
+# NumPy: Phải >=2.0.0 vì NumPy 1.26.4 không có wheel cho Python 3.13 (chỉ build từ source, cần MSVC đầy đủ)
+# NumPy 2.0+ có wheel chính thức hỗ trợ Python 3.13
+numpy>=2.0.0
+
+# OpenCV: Phiên bản mới nhất (4.10+ hoặc 4.11+) hỗ trợ Python 3.13 với wheel sẵn
+opencv-python>=4.10.0
+# Nếu cần full contrib modules (SIFT, SURF, DNN extras...):
+# opencv-contrib-python>=4.10.0
+
 pillow>=10.0.0
-ultralytics>=8.1.0
+
+# Ultralytics YOLO: Phiên bản mới nhất tương thích NumPy 2.x và Python 3.13
+ultralytics>=8.2.0  # >=8.1.0 cũ có thể xung đột NumPy 2.x, nâng lên để an toàn
+
 torch>=2.1.0
 torchvision>=0.16.0
+
 transformers>=4.36.0
 accelerate>=0.25.0
+
 minio>=7.2.0
 pymongo>=4.6.0
-pandas>=2.1.0
+pandas>=2.1.0          # Pandas 2.1+ tương thích NumPy 2.x
 matplotlib>=3.8.0
 tqdm>=4.66.0
 python-dotenv>=1.0.0

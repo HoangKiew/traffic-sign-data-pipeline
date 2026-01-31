@@ -4,11 +4,41 @@ Provides structured logging with file and console output
 """
 import logging
 import sys
+import io
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from typing import Optional
 
+
+# ────────────────────────────────────────────────────────────────
+#     FORCE UTF-8 CHO CONSOLE TRÊN WINDOWS (FIX UnicodeEncodeError)
+# ────────────────────────────────────────────────────────────────
+if sys.platform.startswith("win"):
+    # Cách 1: Re-encode stdout/stderr với UTF-8 + errors='replace' (an toàn nhất)
+    try:
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.detach(),
+            encoding='utf-8',
+            errors='replace',           # thay ký tự xấu bằng ?
+            line_buffering=True
+        )
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.detach(),
+            encoding='utf-8',
+            errors='replace',
+            line_buffering=True
+        )
+    except (AttributeError, io.UnsupportedOperation):
+        # Nếu detach() không hoạt động (hiếm), fallback sang cách khác
+        pass
+
+    # Cách 2: Set PYTHONIOENCODING (nếu chạy qua subprocess hoặc cần toàn cục)
+    # Nhưng cách trên thường đủ rồi
+
+# ────────────────────────────────────────────────────────────────
+#                     PIPELINE LOGGER
+# ────────────────────────────────────────────────────────────────
 
 class PipelineLogger:
     """Centralized logger for the entire pipeline"""
@@ -38,26 +68,19 @@ class PipelineLogger:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
         
-        # Fix Unicode encoding for Windows
         console_formatter = logging.Formatter(
             '%(asctime)s - %(levelname)s - %(message)s',
             datefmt='%H:%M:%S'
         )
         console_handler.setFormatter(console_formatter)
         
-        # Force UTF-8 encoding on Windows
-        if hasattr(console_handler.stream, 'reconfigure'):
-            try:
-                console_handler.stream.reconfigure(encoding='utf-8')
-            except:
-                pass
-        
         # File handler (DEBUG and above) with rotation
         log_file = self.log_dir / f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
         file_handler = RotatingFileHandler(
             log_file,
             maxBytes=10*1024*1024,  # 10MB
-            backupCount=5
+            backupCount=5,
+            encoding='utf-8'          # Đảm bảo file log hỗ trợ UTF-8
         )
         file_handler.setLevel(logging.DEBUG)
         file_formatter = logging.Formatter(
@@ -75,43 +98,42 @@ class PipelineLogger:
         self.logger.info("="*60)
     
     def get_logger(self) -> logging.Logger:
-        """Get the logger instance"""
         return self.logger
     
+    def _replace_unicode(self, msg: str) -> str:
+        # Giữ lại để thay emoji nếu muốn, nhưng giờ không cần cho tiếng Việt nữa
+        return (
+            msg.replace("✅", "OK")
+               .replace("⚠️", "WARNING")
+               .replace("→", "->")
+               .replace("✓", "OK")
+               .replace("✗", "X")
+               # ... giữ nguyên các thay thế khác nếu bạn thích
+        )
+
     def info(self, msg: str):
-        """Log info message"""
-        self.logger.info(msg)
+        self.logger.info(self._replace_unicode(msg))
     
     def debug(self, msg: str):
-        """Log debug message"""
-        self.logger.debug(msg)
+        self.logger.debug(self._replace_unicode(msg))
     
     def warning(self, msg: str):
-        """Log warning message"""
-        self.logger.warning(msg)
+        self.logger.warning(self._replace_unicode(msg))
     
     def error(self, msg: str, exc_info: bool = False):
-        """Log error message"""
-        self.logger.error(msg, exc_info=exc_info)
+        self.logger.error(self._replace_unicode(msg), exc_info=exc_info)
     
     def critical(self, msg: str, exc_info: bool = False):
-        """Log critical message"""
-        self.logger.critical(msg, exc_info=exc_info)
+        self.logger.critical(self._replace_unicode(msg), exc_info=exc_info)
     
     def section(self, title: str):
-        """Log a section header"""
-        self.logger.info("")
-        self.logger.info("="*60)
-        self.logger.info(f"  {title}")
-        self.logger.info("="*60)
+        self.logger.info("  " + self._replace_unicode(title))
     
     def progress(self, current: int, total: int, prefix: str = "Progress"):
-        """Log progress"""
         percentage = (current / total * 100) if total > 0 else 0
-        self.logger.info(f"{prefix}: {current}/{total} ({percentage:.1f}%)")
+        self.logger.info(self._replace_unicode(f"{prefix}: {current}/{total} ({percentage:.1f}%)"))
 
 
-# Global logger instance
+# Global access
 def get_logger() -> PipelineLogger:
-    """Get the global logger instance"""
     return PipelineLogger()
