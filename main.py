@@ -84,6 +84,21 @@ class DataCleaningPipeline:
         """Calculate MD5 hash for deduplication"""
         return hashlib.md5(image_bytes).hexdigest()
     
+    def _crop_box(self, img, bbox):
+        """
+        Cắt ảnh theo bbox [x1, y1, x2, y2], đảm bảo không vượt ngoài biên ảnh.
+        """
+        x1, y1, x2, y2 = map(int, bbox)
+        h, w = img.shape[:2]
+        x1 = max(0, min(x1, w-1))
+        x2 = max(0, min(x2, w))
+        y1 = max(0, min(y1, h-1))
+        y2 = max(0, min(y2, h))
+        if x2 <= x1 or y2 <= y1:
+            # Nếu bbox không hợp lệ, trả về ảnh gốc (hoặc raise)
+            return img
+        return img[y1:y2, x1:x2]
+
     def run(self):
         """
         Main pipeline execution
@@ -115,6 +130,7 @@ class DataCleaningPipeline:
                 # 1. Download raw image from MinIO
                 data = self.minio.download_image(img_name)
                 if not data:
+                    logger.debug(f"Lỗi: Không tải được ảnh '{img_name}' từ MinIO.")
                     stats['errors'] += 1
                     continue
                 
@@ -138,14 +154,20 @@ class DataCleaningPipeline:
                 nparr = np.frombuffer(data, np.uint8)
                 raw_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 if raw_img is None:
+                    logger.debug(f"Lỗi: Không decode được ảnh '{img_name}'. Có thể file bị hỏng hoặc không phải ảnh.")
                     stats['errors'] += 1
                     continue
                 
                 # 3. Preprocess (in-memory)
-                processed_img, info = self.preprocessor.process_image(
-                    raw_img, 
-                    check_sharpness=True
-                )
+                try:
+                    processed_img, info = self.preprocessor.process_image(
+                        raw_img, 
+                        check_sharpness=True
+                    )
+                except Exception as e:
+                    logger.debug(f"Lỗi: Tiền xử lý thất bại với '{img_name}': {e}")
+                    stats['errors'] += 1
+                    continue
                 
                 # 4. Dual YOLO detect, crop, save crop & metadata
                 if self.dual_yolo_classify and self.detector_x:
@@ -233,13 +255,19 @@ class DataCleaningPipeline:
                 stats['processed'] += 1
                 
             except Exception as e:
-                logger.debug(f"Error processing {img_name}: {e}")
+                logger.debug(f"Lỗi không xác định khi xử lý '{img_name}': {e}")
                 stats['errors'] += 1
                 continue
         
         # Print summary
         self._print_summary(stats)
-    
+        # --- Cảnh báo nếu lỗi toàn bộ hoặc tỷ lệ lỗi cao ---
+        total_images = len(all_images)
+        if stats['errors'] == total_images:
+            logger.warning("TẤT CẢ ảnh đều lỗi! Kiểm tra lại dữ liệu ảnh (có thể ảnh bị hỏng hoặc không đúng định dạng).")
+        elif stats['errors'] > 0.5 * total_images:
+            logger.warning(f"Tỷ lệ lỗi cao: {stats['errors']} trên {total_images} ảnh. Hãy kiểm tra lại pipeline tiền xử lý và định dạng ảnh.")
+
     def _print_summary(self, stats):
         """Print processing summary"""
         logger.section("Data Cleaning Summary")
