@@ -45,12 +45,13 @@ class DataCleaningPipeline:
         logger.info("Initializing...")
         
         self.minio = MinIOClient()
-        self.detector_n = TrafficSignDetector(model_path="yolov8n.pt")
-        self.detector_x = TrafficSignDetector(model_path="yolov8x.pt") if dual_yolo_classify else None
+        # Dùng best.pt để lọc biển báo
+        self.detector_n = TrafficSignDetector(model_path="best.pt")
+        self.detector_x = None  # Không dùng YOLOv8x ở bước này
         self.preprocessor = ImagePreprocessor()
         self.hashes = set()
         self.save_processed_to_minio = save_processed_to_minio
-        self.dual_yolo_classify = dual_yolo_classify
+        self.dual_yolo_classify = False  # Không dùng dual ở bước này
         self.crop_bucket_n = CROP_BUCKET_N
         self.crop_bucket_x = CROP_BUCKET_X
         self.mongo = MongoDBClient()
@@ -168,80 +169,30 @@ class DataCleaningPipeline:
                     logger.debug(f"Lỗi: Tiền xử lý thất bại với '{img_name}': {e}")
                     stats['errors'] += 1
                     continue
-                
-                # 4. Dual YOLO detect, crop, save crop & metadata
-                if self.dual_yolo_classify and self.detector_x:
-                    detections_n = self.detector_n.detect(processed_img)
-                    detections_x = self.detector_x.detect(processed_img)
-                    valid_signs_n = [d for d in detections_n if d['confidence'] > CONF_FILTER]
-                    valid_signs_x = [d for d in detections_x if d['confidence'] > CONF_FILTER]
-                    if not valid_signs_n and not valid_signs_x:
-                        stats['deleted_no_sign'] += 1
-                        continue
 
-                    # Crop & save for YOLOv8n
-                    for idx, det in enumerate(valid_signs_n):
-                        crop = self._crop_box(processed_img, det['bbox'])
-                        crop_name = f"n_{os.path.splitext(img_name)[0]}_{idx}.jpg"
-                        _, encoded = cv2.imencode('.jpg', crop)
-                        self.minio.upload_image(
-                            crop_name, encoded.tobytes(), bucket=self.crop_bucket_n
-                        )
-                        # Save metadata
-                        meta = {
-                            "image_name": img_name,
-                            "crop_name": crop_name,
-                            "model": "yolov8n",
-                            "bbox": [float(x) for x in det['bbox']],
-                            "confidence": float(det['confidence']),
-                            "label": det.get('label', ''),
-                            "created_at": datetime.now(),
-                        }
-                        self.mongo.insert_metadata(METADATA_COLLECTION, meta)
-
-                    # Crop & save for YOLOv8x
-                    for idx, det in enumerate(valid_signs_x):
-                        crop = self._crop_box(processed_img, det['bbox'])
-                        crop_name = f"x_{os.path.splitext(img_name)[0]}_{idx}.jpg"
-                        _, encoded = cv2.imencode('.jpg', crop)
-                        self.minio.upload_image(
-                            crop_name, encoded.tobytes(), bucket=self.crop_bucket_x
-                        )
-                        meta = {
-                            "image_name": img_name,
-                            "crop_name": crop_name,
-                            "model": "yolov8x",
-                            "bbox": [float(x) for x in det['bbox']],
-                            "confidence": float(det['confidence']),
-                            "label": det.get('label', ''),
-                            "created_at": datetime.now(),
-                        }
-                        self.mongo.insert_metadata(METADATA_COLLECTION, meta)
-
-                else:
-                    detections = self.detector_n.detect(processed_img)
-                    valid_signs = [d for d in detections if d['confidence'] > CONF_FILTER]
-                    if not valid_signs:
-                        stats['deleted_no_sign'] += 1
-                        continue
-                    # Crop & save for YOLOv8n only
-                    for idx, det in enumerate(valid_signs):
-                        crop = self._crop_box(processed_img, det['bbox'])
-                        crop_name = f"n_{os.path.splitext(img_name)[0]}_{idx}.jpg"
-                        _, encoded = cv2.imencode('.jpg', crop)
-                        self.minio.upload_image(
-                            crop_name, encoded.tobytes(), bucket=self.crop_bucket_n
-                        )
-                        meta = {
-                            "image_name": img_name,
-                            "crop_name": crop_name,
-                            "model": "yolov8n",
-                            "bbox": [float(x) for x in det['bbox']],
-                            "confidence": float(det['confidence']),
-                            "label": det.get('label', ''),
-                            "created_at": datetime.now(),
-                        }
-                        self.mongo.insert_metadata(METADATA_COLLECTION, meta)
+                # 4. Dùng best.pt detect, crop, lưu crop & metadata (KHÔNG phân loại)
+                detections = self.detector_n.detect(processed_img)
+                valid_signs = [d for d in detections if d['confidence'] > CONF_FILTER]
+                if not valid_signs:
+                    stats['deleted_no_sign'] += 1
+                    continue
+                # Crop & save biển báo
+                for idx, det in enumerate(valid_signs):
+                    crop = self._crop_box(processed_img, det['bbox'])
+                    crop_name = f"sign_{os.path.splitext(img_name)[0]}_{idx}.jpg"
+                    _, encoded = cv2.imencode('.jpg', crop)
+                    self.minio.upload_image(
+                        crop_name, encoded.tobytes(), bucket=self.crop_bucket_n
+                    )
+                    meta = {
+                        "image_name": img_name,
+                        "crop_name": crop_name,
+                        "model": "best.pt",
+                        "bbox": [float(x) for x in det['bbox']],
+                        "confidence": float(det['confidence']),
+                        "created_at": datetime.now(),
+                    }
+                    self.mongo.insert_metadata(METADATA_COLLECTION, meta)
 
                 # Save processed image to MinIO (optional, for visualization)
                 if self.save_processed_to_minio:

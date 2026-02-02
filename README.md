@@ -126,6 +126,20 @@ python label_data.py
 
 ## 📁 Cấu trúc thư mục
 
+```mermaid
+graph TD
+    A[download_from_web.py<br>Web Scraping] -->|Ảnh| B[MinIO: traffic-signs-raw]
+    B --> C[fast_filter.py<br>Lọc nhanh]
+    C --> D[main.py<br>Tiền xử lý & Làm sạch<br>(best.pt chỉ lọc biển báo)]
+    D -->|Ảnh biển báo| E[MinIO: traffic-signs-processed]
+    E --> F[master_pipeline.py<br>Detection & Classification<br>(YOLOv8n + YOLOv8x)]
+    F -->|Nhãn| G[datasets/labels_n<br>datasets/labels_x]
+    G --> H[label_data.py<br>Gán nhãn, phân loại màu sắc & hình dạng<br>Upload MongoDB]
+    H --> I[MongoDB: dataset_labels_v1]
+    G --> J[visualize_analytics.py<br>Phân tích & Biểu đồ]
+    J --> K[analytics_charts/]
+```
+
 ```
 traffic-sign-data-pipeline/
 ├── config/                    # Cấu hình
@@ -146,7 +160,7 @@ traffic-sign-data-pipeline/
 ├── download_from_web.py       # Script 1: Crawl
 ├── fast_filter.py             # Script 2: Filter
 ├── main.py                    # Script 3: Preprocess
-├── fast_detection.py          # Script 4: Detect
+├── master_pipeline.py         # Script 4: Dual YOLO detect/classify
 ├── label_data.py              # Script 5: Label
 ├── visualize_analytics.py     # Script 6: Visualize
 ├── unified_pipeline.py        # Chạy tất cả
@@ -221,6 +235,51 @@ Script `visualize_analytics.py` tạo 10 biểu đồ:
 8. **location_by_class.png** - Vị trí theo loại
 9. **area_histogram.png** - Histogram diện tích
 10. **summary_statistics.png** - Bảng thống kê
+
+---
+
+### Đánh giá mức độ hợp lý với đề tài "Nhận diện & phân loại biển báo giao thông":
+
+- **1. Số lượng theo loại (Bar chart):**  
+  ✔️ Rất hợp lý. Cho biết phân bố các loại biển báo trong dataset, giúp đánh giá cân bằng lớp.
+
+- **2. Tỷ lệ % theo loại (Pie chart):**  
+  ✔️ Hợp lý. Dễ hình dung tỷ lệ từng loại biển báo, phát hiện mất cân bằng lớp.
+
+- **3. Phân bố kích thước (Size distribution):**  
+  ✔️ Hợp lý. Kiểm tra biển báo nhỏ/quá lớn, giúp điều chỉnh pipeline hoặc augment.
+
+- **4. Diện tích theo loại (Area by class):**  
+  ✔️ Hợp lý. So sánh các loại biển báo có diện tích khác nhau không, phát hiện lớp dễ bị bỏ sót.
+
+- **5. Chiều rộng vs cao (Width vs Height):**  
+  ✔️ Hợp lý. Kiểm tra hình dạng vật thể, phát hiện outlier (biển báo méo, crop lỗi).
+
+- **6. Tỷ lệ khung hình (Aspect ratio):**  
+  ✔️ Hợp lý. Đánh giá hình học biển báo, phát hiện lỗi crop hoặc biển báo dị dạng.
+
+- **7. Bản đồ nhiệt vị trí (Location heatmap):**  
+  ✔️ Hợp lý. Xem biển báo thường xuất hiện ở đâu trên ảnh, giúp kiểm tra bias dữ liệu.
+
+- **8. Vị trí theo loại (Location by class):**  
+  ✔️ Hợp lý. Phân tích vị trí từng loại biển báo, phát hiện lớp nào thường ở góc/trung tâm.
+
+- **9. Histogram diện tích:**  
+  ✔️ Hợp lý. Phân tích tổng thể diện tích biển báo, phát hiện outlier.
+
+- **10. Bảng thống kê tổng quan:**  
+  ✔️ Rất hợp lý. Tổng hợp nhanh các chỉ số quan trọng của dataset.
+
+---
+
+**Kết luận:**  
+Các biểu đồ trên đều hợp lý, phù hợp với đề tài nhận diện & phân loại biển báo giao thông.  
+Nếu muốn chuyên sâu hơn, có thể bổ sung:
+- Biểu đồ phân bố hình dạng (shape: tròn, tam giác, vuông, ... nếu có lưu shape).
+- Biểu đồ phân tích theo nguồn ảnh (web, dashcam, ...).
+- Biểu đồ theo màu sắc chủ đạo.
+
+Nhưng với 10 biểu đồ hiện tại, đã đáp ứng tốt nhu cầu kiểm tra, phân tích chất lượng dataset biển báo giao thông.
 
 ---
 

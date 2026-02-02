@@ -36,6 +36,7 @@ UNSHARP_SIGMA = 1.0
 
 # YOLO Configuration
 YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "yolov8n.pt")  # Sử dụng YOLOv8 nano
+YOLO_MODEL_PATH_X = os.getenv("YOLO_MODEL_PATH_X", "yolov8x.pt")  # Sử dụng YOLOv8x (nếu cần)
 YOLO_CONFIDENCE_THRESHOLD = 0.5
 
 # VLM Configuration
@@ -52,6 +53,10 @@ TRAIN_IMAGES_DIR = os.path.join(OUTPUT_DIR, "train", "images")
 TRAIN_LABELS_DIR = os.path.join(OUTPUT_DIR, "train", "labels")
 TEST_IMAGES_DIR = os.path.join(OUTPUT_DIR, "test", "images")
 TEST_LABELS_DIR = os.path.join(OUTPUT_DIR, "test", "labels")
+
+# Dùng cả 2 bucket crop để train
+MINIO_BUCKET_CROP_TRAIN_N = "traffic-signs-crop-n"
+MINIO_BUCKET_CROP_TRAIN_X = "traffic-signs-crop-x"
 
 # Create output directories if they don't exist
 os.makedirs(TRAIN_IMAGES_DIR, exist_ok=True)

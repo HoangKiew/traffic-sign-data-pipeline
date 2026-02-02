@@ -98,17 +98,20 @@ class PipelineOrchestrator:
             if self.interrupted:
                 return
             
-            # Stage 4: Detection & Classification
-            self._run_detection_classification()
+            # Stage 4: Detection & Classification (Dual YOLO)
+            self._run_dual_detection_classification()
             if self.interrupted:
                 return
             
-            # Stage 5: Labeling & Database Upload
-            self._run_labeling()
+            # Stage 5: Labeling & Database Upload (Dual YOLO)
+            self._run_dual_labeling()
             if self.interrupted:
                 return
             
-            # Stage 6: Dataset Splitting
+            # Stage 6: Visualization
+            self._run_visualization()
+            
+            # Stage 7: Dataset Splitting (if needed)
             self._run_dataset_splitting()
             
             logger.section("✅ PIPELINE COMPLETED SUCCESSFULLY")
@@ -169,35 +172,38 @@ class PipelineOrchestrator:
             logger.error(f"Data cleaning failed: {e}")
             raise
     
-    def _run_detection_classification(self):
-        """Stage 4: Detection & Classification"""
-        logger.section("Stage 4: Detection & Classification")
-        
+    def _run_dual_detection_classification(self):
+        """Stage 4: Detection & Classification (Dual YOLO)"""
+        logger.section("Stage 4: Detection & Classification (Dual YOLO)")
         try:
-            from master_pipeline import run_master
-            
-            run_master()
-            
-            self.save_checkpoint("detection_complete", {})
-            
+            from master_pipeline import run_dual_yolo
+            run_dual_yolo(from_minio=True)
+            self.save_checkpoint("dual_detection_complete", {})
         except Exception as e:
-            logger.error(f"Detection & classification failed: {e}")
+            logger.error(f"Dual detection failed: {e}")
             raise
     
-    def _run_labeling(self):
-        """Stage 5: Labeling & Database Upload"""
-        logger.section("Stage 5: Labeling & Database Upload")
-        
+    def _run_dual_labeling(self):
+        """Stage 5: Labeling & Database Upload (Dual YOLO)"""
+        logger.section("Stage 5: Labeling & Database Upload (Dual YOLO)")
         try:
             from label_data import LabelingPipeline
-            
-            pipeline = LabelingPipeline()
+            pipeline = LabelingPipeline(dual_yolo=True)
             pipeline.run()
-            
-            self.save_checkpoint("labeling_complete", {})
-            
+            self.save_checkpoint("dual_labeling_complete", {})
         except Exception as e:
-            logger.error(f"Labeling failed: {e}")
+            logger.error(f"Dual labeling failed: {e}")
+            raise
+    
+    def _run_visualization(self):
+        """Stage 6: Visualization"""
+        logger.section("Stage 6: Visualization")
+        try:
+            import visualize_analytics
+            visualize_analytics.main()
+            self.save_checkpoint("visualization_complete", {})
+        except Exception as e:
+            logger.error(f"Visualization failed: {e}")
             raise
     
     def _run_dataset_splitting(self):

@@ -4,6 +4,8 @@ Mỗi biểu đồ được lưu riêng biệt để dễ xem và sử dụng
 """
 import os
 import glob
+import matplotlib
+matplotlib.use('Agg')  # Thêm dòng này ngay sau import matplotlib để dùng non-GUI backend
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
@@ -144,7 +146,7 @@ def create_visualizations(df, num_files):
     for cls_id, cls_name in CLASS_NAMES.items():
         if cls_name in df['Class'].values:
             data_cls = df[df['Class'] == cls_name]['Area']
-            plt.hist(data_cls, bins=30, alpha=0.6, label=cls_name, color=CLASS_COLORS[cls_id])
+            plt.hist(data_cls, bins=30, alpha=0.5, label=cls_name, color=CLASS_COLORS[cls_id])
     plt.xlabel('Diện tích (normalized)', fontsize=12)
     plt.ylabel('Tần suất', fontsize=12)
     plt.title('Phân bố diện tích theo loại biển báo', fontsize=14, fontweight='bold')
@@ -172,24 +174,46 @@ def create_visualizations(df, num_files):
     plt.savefig(f'{OUTPUT_DIR}/width_vs_height.png', dpi=200, bbox_inches='tight')
     plt.close()
     
-    # === CHART 6: Aspect Ratio Boxplot ===
-    print("  → Chart 6: Tỷ lệ khung hình theo loại")
+    # === CHART 6: Phân bố màu sắc biển báo theo loại (Color Distribution) ===
+    print("  → Chart 6: Phân bố màu sắc biển báo theo loại")
+    plt.figure(figsize=(10, 6))
+    if "Class_ID" not in df.columns:
+        class_id_map = {v: k for k, v in CLASS_NAMES.items()}
+        df["Class_ID"] = df["Class"].map(class_id_map)
+    color_counts = df["Class_ID"].value_counts().sort_index()
+    color_labels = [CLASS_NAMES.get(i, str(i)) for i in color_counts.index]
+    color_palette = [CLASS_COLORS.get(i, "#cccccc") for i in color_counts.index]
+    plt.bar(color_labels, color_counts.values, color=color_palette, edgecolor='black')
+    plt.ylabel('Số lượng', fontsize=12, fontweight='bold')
+    plt.xlabel('Loại màu sắc biển báo', fontsize=12, fontweight='bold')
+    plt.title('Phân bố màu sắc biển báo theo loại', fontsize=14, fontweight='bold')
+    for i, v in enumerate(color_counts.values):
+        plt.text(i, v, str(v), ha='center', va='bottom', fontweight='bold')
+    plt.tight_layout()
+    plt.savefig(f'{OUTPUT_DIR}/color_distribution.png', dpi=200, bbox_inches='tight')
+    plt.close()
+
+    # === CHART 7: Tỷ lệ diện tích biển báo trên ảnh gốc (Relative Area) ===
+    print("  → Chart 7: Tỷ lệ diện tích biển báo trên ảnh gốc (Relative Area)")
     plt.figure(figsize=(12, 6))
+    if "Width_Img" in df.columns and "Height_Img" in df.columns:
+        df["Relative_Area"] = (df["Width"] * df["Height"]) / (df["Width_Img"] * df["Height_Img"])
+    else:
+        df["Relative_Area"] = df["Area"]  # YOLO labels đã chuẩn hóa
     df_sorted = df.sort_values('Class_ID')
-    sns.boxplot(data=df_sorted, x='Class', y='Aspect_Ratio', hue='Class', legend=False,
+    sns.boxplot(data=df_sorted, x='Class', y='Relative_Area', hue='Class', legend=False,
                 palette=[CLASS_COLORS[i] for i in sorted(df['Class_ID'].unique())])
-    plt.axhline(1.0, color='red', linestyle='--', linewidth=2, alpha=0.7, label='Vuông (1:1)')
-    plt.ylabel('Aspect Ratio (W/H)', fontsize=12)
-    plt.title('Tỷ lệ khung hình theo loại biển báo', fontsize=14, fontweight='bold')
+    plt.ylabel('Tỷ lệ diện tích (biển báo/ảnh)', fontsize=12)
+    plt.title('Tỷ lệ diện tích biển báo trên ảnh gốc theo loại', fontsize=14, fontweight='bold')
     plt.legend()
     plt.xticks(rotation=15)
     plt.grid(axis='y', alpha=0.3)
     plt.tight_layout()
-    plt.savefig(f'{OUTPUT_DIR}/aspect_ratio.png', dpi=200, bbox_inches='tight')
+    plt.savefig(f'{OUTPUT_DIR}/relative_area.png', dpi=200, bbox_inches='tight')
     plt.close()
     
-    # === CHART 7: Location Heatmap ===
-    print("  → Chart 7: Bản đồ nhiệt vị trí")
+    # === CHART 8: Location Heatmap ===
+    print("  → Chart 8: Bản đồ nhiệt vị trí")
     plt.figure(figsize=(10, 10))
     sns.kdeplot(data=df, x='Center_X', y='Center_Y', fill=True, 
                 cmap="YlOrRd", thresh=0.05, levels=20)
@@ -204,34 +228,13 @@ def create_visualizations(df, num_files):
     plt.savefig(f'{OUTPUT_DIR}/location_heatmap.png', dpi=200, bbox_inches='tight')
     plt.close()
     
-    # === CHART 8: Location by Class ===
-    print("  → Chart 8: Vị trí theo loại")
-    plt.figure(figsize=(10, 10))
-    for cls_id, cls_name in CLASS_NAMES.items():
-        if cls_name in df['Class'].values:
-            data_cls = df[df['Class'] == cls_name]
-            plt.scatter(data_cls['Center_X'], data_cls['Center_Y'],
-                       alpha=0.4, s=15, label=cls_name, color=CLASS_COLORS[cls_id])
-    plt.gca().invert_yaxis()
-    plt.xlim(0, 1)
-    plt.ylim(1, 0)
-    plt.xlabel('Vị trí ngang', fontsize=12)
-    plt.ylabel('Vị trí dọc', fontsize=12)
-    plt.title('Phân bố vị trí theo loại biển báo', fontsize=14, fontweight='bold')
-    plt.legend(loc='upper right', framealpha=0.9)
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(f'{OUTPUT_DIR}/location_by_class.png', dpi=200, bbox_inches='tight')
-    plt.close()
-    
     # === CHART 9: Area Histogram ===
     print("  → Chart 9: Phân bố diện tích")
     plt.figure(figsize=(12, 6))
-    plt.hist(df['Area'], bins=50, color='steelblue', edgecolor='black', alpha=0.7)
-    plt.axvline(df['Area'].mean(), color='red', linestyle='--', linewidth=2, 
-                label=f'Trung bình: {df["Area"].mean():.3f}')
-    plt.axvline(df['Area'].median(), color='green', linestyle='--', linewidth=2,
-                label=f'Median: {df["Area"].median():.3f}')
+    area = df['Area']
+    plt.hist(area, bins=50, color='steelblue', edgecolor='black', alpha=0.7)
+    plt.axvline(area.mean(), color='red', linestyle='--', linewidth=2, label=f'Trung bình: {area.mean():.3f}')
+    plt.axvline(area.median(), color='green', linestyle='--', linewidth=2, label=f'Median: {area.median():.3f}')
     plt.xlabel('Diện tích (normalized)', fontsize=12)
     plt.ylabel('Tần suất', fontsize=12)
     plt.title('Phân bố diện tích biển báo', fontsize=14, fontweight='bold')

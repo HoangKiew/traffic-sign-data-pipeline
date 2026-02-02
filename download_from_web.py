@@ -29,8 +29,10 @@ if __name__ == "__main__":
     
     scraper = HighVolumeScraper(save_to_minio=True)
     
-    # Tăng max_num lên 300
-    # Bing: 300 ảnh/từ khóa + Google: 240 ảnh/từ khóa
-    # Tổng lý thuyết: 540 ảnh/từ khóa * 30 từ khóa = ~16.000 ảnh
-    # Sau khi lọc trùng, bạn chắc chắn sẽ có trên 5.000 ảnh.
-    scraper.crawl(KEYWORDS, max_num=300)
+    # Đổi max_num hoặc thêm các tham số khác nếu muốn
+    # Đổi đường dẫn lưu ảnh nếu cần (ví dụ: lưu vào bucket khác)
+    # Ví dụ: lưu vào bucket 'my-traffic-signs'
+    # scraper.crawl(KEYWORDS, max_num=300, bucket="my-traffic-signs")
+
+    # Nếu chỉ muốn đổi số lượng ảnh/từ khóa:
+    scraper.crawl(KEYWORDS, max_num=150)
