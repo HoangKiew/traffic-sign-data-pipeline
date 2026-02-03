@@ -8,7 +8,7 @@ matplotlib.use('Agg')  # Sửa lỗi backend, dùng non-GUI
 import matplotlib.pyplot as plt
 import json
 
-LABEL_DIR = "datasets/labels"
+LABEL_DIR = "datasets/labels_n"  # Đổi sang labels_n hoặc labels_x nếu bạn dùng YOLOv8n/x
 SPLIT_RATIO = [0.7, 0.15, 0.15]  # train/val/test
 SEED = 42
 
@@ -39,6 +39,14 @@ def stratified_split(df, split_ratio, seed=42):
 def main():
     df = load_label_info(LABEL_DIR)
     print(f"Tổng số object: {len(df)}")
+    if df is None or df.empty:
+        print("Không có dữ liệu để tách train/val/test! Hãy kiểm tra lại file labels đầu vào.")
+        return
+    if 'class' not in df.columns:
+        print("Lỗi: Không tìm thấy cột 'class' trong dữ liệu! Hãy kiểm tra lại quá trình sinh nhãn hoặc preprocessing.")
+        print(f"Các cột hiện có: {list(df.columns)}")
+        return
+
     train_idx, val_idx, test_idx = stratified_split(df, SPLIT_RATIO, SEED)
     split_df = pd.DataFrame(
         [(int(idx), "train") for idx in train_idx] +

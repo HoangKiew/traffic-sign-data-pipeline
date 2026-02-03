@@ -1,0 +1,85 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from data_collection.web_scraper import HighVolumeScraper
+
+# DANH SÁCH TỪ KHÓA TỐI ƯU (Bao gồm cả ngữ cảnh đường phố)
+KEYWORDS = [
+    # --- Nhóm 1: Biển báo cụ thể (Specific) ---
+    "No U-turn sign",
+    "Stop sign",
+    "No left turn sign",
+    "No right turn sign",
+    "50 km/h speed limit sign",
+    "60 km/h speed limit sign",
+    "Vietnam traffic signs street",
+
+    # --- Nhóm 2: Từ khóa Tiếng Anh (Mở rộng nguồn) ---
+    "Traffic signs Hanoi",
+    "Traffic signs Saigon",
+    "Vietnamese road signs",
+    "Vietnam highway signs",
+    "Street signs Vietnam",
+
+    # --- Nhóm 3: NGỮ CẢNH ĐƯỜNG PHỐ (QUAN TRỌNG ĐỂ TĂNG SỐ LƯỢNG) ---
+    "Giao thông Việt Nam",
+    "Đường phố Hà Nội",
+    "Đường phố Sài Gòn",
+    "Ngã tư đường phố Việt Nam",
+    "Vietnam street view",
+    "Driving in Vietnam",
+    "Vietnam road trip",
+    "Vietnam traffic jam",
+    "Quốc lộ 1A Việt Nam",
+    "Đường cao tốc Việt Nam",
+    "Xe cộ Việt Nam",
+    "Cảnh sát giao thông Việt Nam"
+
+    # --- Nhóm 4: Biển báo tổng hợp bổ sung ---
+    "biển báo giao thông",
+    "biển báo đường bộ",
+    "biển báo chỉ dẫn",
+    "biển báo nguy hiểm",
+    "biển báo cấm",
+    "biển báo phụ",
+    "biển báo hiệu lệnh",
+    "biển báo hướng dẫn",
+    "biển báo khu dân cư",
+    "biển báo khu công nghiệp",
+    "biển báo trường học",
+    "biển báo bệnh viện",
+    "biển báo khu vực cấm",
+    "biển báo khu vực nguy hiểm",
+    "biển báo khu vực thi công",
+    "biển báo khu vực đông dân cư",
+    "biển báo khu vực hạn chế tốc độ",
+    "biển báo khu vực cấm đỗ xe",
+    "biển báo khu vực cấm dừng xe",
+    "biển báo khu vực cấm quay đầu",
+    "biển báo khu vực cấm vượt",
+    "biển báo khu vực cấm rẽ trái",
+    "biển báo khu vực cấm rẽ phải",
+    "biển báo khu vực giao nhau",
+    "biển báo khu vực vòng xuyến",
+    "biển báo khu vực đường một chiều",
+    "biển báo khu vực đường cụt",
+    "biển báo khu vực đường trơn trượt",
+    "biển báo khu vực có trẻ em",
+    "biển báo khu vực có động vật băng qua",
+    "biển báo khu vực có công trường",
+    "biển báo khu vực có cảnh sát giao thông",
+    "biển báo khu vực có xe ưu tiên"
+]
+
+if __name__ == "__main__":
+    print(f"=== CHIẾN DỊCH TẢI ẢNH QUY MÔ LỚN ({len(KEYWORDS)} từ khóa) ===")
+    
+    scraper = HighVolumeScraper(save_to_minio=True)
+    
+    # Đổi max_num hoặc thêm các tham số khác nếu muốn
+    # Đổi đường dẫn lưu ảnh nếu cần (ví dụ: lưu vào bucket khác)
+    # Ví dụ: lưu vào bucket 'my-traffic-signs'
+    # scraper.crawl(KEYWORDS, max_num=300, bucket="my-traffic-signs")
+
+    # Nếu chỉ muốn đổi số lượng ảnh/từ khóa:
+    scraper.crawl(KEYWORDS, max_num=150)

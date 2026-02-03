@@ -63,3 +63,28 @@ os.makedirs(TRAIN_IMAGES_DIR, exist_ok=True)
 os.makedirs(TEST_IMAGES_DIR, exist_ok=True)
 os.makedirs(TRAIN_LABELS_DIR, exist_ok=True)
 os.makedirs(TEST_LABELS_DIR, exist_ok=True)
+
+# Tự động tạo bucket MinIO nếu chưa tồn tại
+def ensure_minio_buckets():
+    try:
+        from minio import Minio
+        client = Minio(
+            MINIO_ENDPOINT,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+            secure=MINIO_SECURE
+        )
+        buckets = [
+            MINIO_BUCKET_RAW,
+            MINIO_BUCKET_PROCESSED,
+            MINIO_BUCKET_CROP_TRAIN_N,
+            MINIO_BUCKET_CROP_TRAIN_X
+        ]
+        for bucket in buckets:
+            if not client.bucket_exists(bucket):
+                client.make_bucket(bucket)
+    except Exception as e:
+        print(f"[MinIO] Bucket creation skipped or failed: {e}")
+
+# Gọi hàm này ở đầu pipeline (ví dụ: trong unified_pipeline.py hoặc main.py)
+# ensure_minio_buckets()

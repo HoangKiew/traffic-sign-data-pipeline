@@ -129,7 +129,7 @@ class PipelineOrchestrator:
         
         try:
             from data_collection.web_scraper import HighVolumeScraper
-            from download_from_web import KEYWORDS
+            from scripts.download_from_web import KEYWORDS
             
             scraper = HighVolumeScraper(save_to_minio=True)
             scraper.crawl(KEYWORDS, max_num=200)
@@ -176,7 +176,7 @@ class PipelineOrchestrator:
         """Stage 4: Detection & Classification (Dual YOLO)"""
         logger.section("Stage 4: Detection & Classification (Dual YOLO)")
         try:
-            from master_pipeline import run_dual_yolo
+            from processing_labeling.master_pipeline import run_dual_yolo
             run_dual_yolo(from_minio=True)
             self.save_checkpoint("dual_detection_complete", {})
         except Exception as e:

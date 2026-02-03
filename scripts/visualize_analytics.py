@@ -13,7 +13,8 @@ import numpy as np
 from tqdm import tqdm
 
 # --- CONFIG ---
-LABEL_DIR = "datasets/labels"
+# Đổi LABELS_DIR mặc định sang labels_n (hoặc labels_x nếu muốn visualize YOLOv8x)
+LABELS_DIR = "datasets/labels_n"
 OUTPUT_DIR = "analytics_charts"
 
 # Class names
@@ -43,11 +44,15 @@ def get_size_category(area):
 def load_data():
     """Load dữ liệu từ YOLO labels"""
     print(" Đang tải dữ liệu từ labels...")
-    txt_files = glob.glob(os.path.join(LABEL_DIR, "*.txt"))
+    txt_files = glob.glob(os.path.join(LABELS_DIR, "*.txt"))
     
     if not txt_files:
-        print(f" Không tìm thấy file labels trong {LABEL_DIR}")
-        return None, 0
+        print(f" Không tìm thấy file labels trong {LABELS_DIR}")
+        print("Không có dữ liệu để visualize!")
+        print("👉 Bạn cần chạy bước phân loại & sinh nhãn YOLO cho crop trước:")
+        print("   python processing_labeling/master_pipeline.py")
+        print("Hoặc kiểm tra lại đường dẫn labels.")
+        exit(0)
     
     data = []
     for txt in tqdm(txt_files, desc="Đọc labels"):
