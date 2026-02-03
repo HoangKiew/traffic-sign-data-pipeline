@@ -1,6 +1,6 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from data_collection.web_scraper import HighVolumeScraper
 
 # DANH SÁCH TỪ KHÓA TỐI ƯU (Bao gồm cả ngữ cảnh đường phố)
@@ -21,7 +21,51 @@ KEYWORDS = [
     "Giao thông Việt Nam", "Đường phố Hà Nội", "Đường phố Sài Gòn",
     "Ngã tư đường phố Việt Nam", "Vietnam street view", "Driving in Vietnam",
     "Vietnam road trip", "Vietnam traffic jam", "Quốc lộ 1A Việt Nam",
-    "Đường cao tốc Việt Nam", "Xe cộ Việt Nam", "Cảnh sát giao thông Việt Nam"
+    "Đường cao tốc Việt Nam", "Xe cộ Việt Nam", "Cảnh sát giao thông Việt Nam",
+
+    # --- BỔ SUNG KEYWORD MỚI ---
+    "International traffic signs",
+    "Highway traffic signs",
+    "No parking sign",
+    "No stopping sign",
+    "Urban area traffic sign",
+    "School zone traffic sign",
+    "Hospital zone traffic sign",
+    "Roundabout sign",
+    "Yield sign",
+    "Children crossing sign",
+    "Speed bump sign",
+    "Slippery road sign",
+    "Animal crossing sign",
+    "Road work sign",
+    "Dead end sign",
+    "One way sign",
+    "No entry sign",
+    "Residential area traffic sign",
+    "Expressway sign",
+    "Motorbike prohibited sign",
+    "Truck prohibited sign",
+
+    # --- BỔ SUNG: BIỂN CHỈ DẪN & BIỂN CẤM ---
+    "Guide sign",
+    "Direction sign",
+    "Blue guide sign",
+    "Green direction sign",
+    "Vietnam guide traffic sign",
+    "Vietnam direction traffic sign",
+    "Biển chỉ dẫn giao thông",
+    "Biển chỉ dẫn đường bộ",
+    "Biển chỉ dẫn màu xanh",
+    "Biển chỉ dẫn đường cao tốc",
+    "Prohibition sign",
+    "Red prohibition sign",
+    "Vietnam prohibition traffic sign",
+    "Biển cấm giao thông",
+    "Biển cấm đường bộ",
+    "Biển cấm màu đỏ",
+    "No entry traffic sign",
+    "No horn sign",
+    "No overtaking sign"
 ]
 
 if __name__ == "__main__":

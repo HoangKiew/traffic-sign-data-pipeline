@@ -1,6 +1,7 @@
 import os
-import cv2
 import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import cv2
 import numpy as np  # <--- Thêm dòng này
 from tqdm import tqdm
 from datetime import datetime
@@ -11,20 +12,19 @@ import matplotlib
 matplotlib.use('Agg')  # <--- Thêm dòng này ngay sau import matplotlib
 
 # Import module
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from processing_labeling.detector import TrafficSignDetector
 from utils.database import MongoDBClient, MinIOClient
 
 # --- CẤU HÌNH ---
-IMG_SOURCE_BUCKET = "traffic-signs-crop-n"  # Đọc ảnh crop từ MinIO bucket này
-LABEL_OUTPUT_DIR = "datasets/labels"           # Nơi lưu file .txt
-LABEL_OUTPUT_DIR_N = "datasets/labels_n"      # Nơi lưu file nhãn YOLOv8n
-LABEL_OUTPUT_DIR_X = "datasets/labels_x"      # Nơi lưu file nhãn YOLOv8x
-MONGO_COLLECTION = "dataset_labels_v1"         # Tên collection trong MongoDB
-COMPARE_RESULTS_DIR = "compare_results"         # Thư mục lưu ảnh so sánh
+IMG_SOURCE_BUCKET = "traffic-signs-crop-n"  # Đọc ảnh crop từ MinIO bucket này (giữ nguyên nếu đây là nguồn đầu vào)
+LABEL_OUTPUT_DIR = "datasets/labels"
+LABEL_OUTPUT_DIR_N = "datasets/labels_n"
+LABEL_OUTPUT_DIR_X = "datasets/labels_x"
+MONGO_COLLECTION = "dataset_labels_v1"
+COMPARE_RESULTS_DIR = "compare_results"
 os.makedirs(COMPARE_RESULTS_DIR, exist_ok=True)
-CROP_BUCKET_N = "traffic-signs-crop-n"
-CROP_BUCKET_X = "traffic-signs-crop-x"
+
+CROP_BUCKET_CLASSIFIED = "traffic-signs-crop-classified"  # <--- Đổi tên bucket lưu crop đã phân loại
 
 def get_shape_name(crop):
     """
@@ -182,6 +182,9 @@ class LabelingPipeline:
             os.makedirs(LABEL_OUTPUT_DIR, exist_ok=True)
         self.mongo = MongoDBClient()
         self.minio = MinIOClient()
+        # Đảm bảo bucket mới tồn tại
+        if not self.minio.client.bucket_exists(CROP_BUCKET_CLASSIFIED):
+            self.minio.client.make_bucket(CROP_BUCKET_CLASSIFIED)
 
     def run(self):
         all_images = self.minio.list_images(bucket=IMG_SOURCE_BUCKET)
@@ -195,11 +198,8 @@ class LabelingPipeline:
         stats_n = {"images": 0, "objects": 0}
         stats_x = {"images": 0, "objects": 0}
 
-        # Thêm biến đếm theo class cho từng model
         class_counts_n = [0, 0, 0, 0, 0]
         class_counts_x = [0, 0, 0, 0, 0]
-
-        # Thêm biến đếm số lượng object trên từng ảnh cho từng model
         per_image_obj_n = []
         per_image_obj_x = []
 
@@ -253,11 +253,11 @@ class LabelingPipeline:
                         })
                         has_valid_obj_n = True
                         obj_count_n += 1
-                        # --- Lưu crop vào MinIO theo class ---
+                        # --- Lưu crop vào bucket mới ---
                         crop_name = f"{base_name}_n_{idx}.jpg"
                         _, encoded = cv2.imencode('.jpg', crop)
                         crop_path = f"class_{class_id}/{crop_name}"
-                        self.minio.upload_image(crop_path, encoded.tobytes(), bucket=CROP_BUCKET_N)
+                        self.minio.upload_image(crop_path, encoded.tobytes(), bucket=CROP_BUCKET_CLASSIFIED)
                 per_image_obj_n.append(obj_count_n)
                 if has_valid_obj_n:
                     metadata_n = {
@@ -275,7 +275,7 @@ class LabelingPipeline:
                     count_success += 1
                     stats_n["images"] += 1
                     stats_n["objects"] += len(mongo_labels_n)
-                    class_counts_n[class_id] += 1  # <--- Đếm theo class YOLOv8n
+                    class_counts_n[class_id] += 1
 
                 # YOLOv8x
                 detections_x = self.detector_x.detect(img)
@@ -311,11 +311,11 @@ class LabelingPipeline:
                         })
                         has_valid_obj_x = True
                         obj_count_x += 1
-                        # --- Lưu crop vào MinIO theo class ---
+                        # --- Lưu crop vào bucket mới ---
                         crop_name = f"{base_name}_x_{idx}.jpg"
                         _, encoded = cv2.imencode('.jpg', crop)
                         crop_path = f"class_{class_id}/{crop_name}"
-                        self.minio.upload_image(crop_path, encoded.tobytes(), bucket=CROP_BUCKET_X)
+                        self.minio.upload_image(crop_path, encoded.tobytes(), bucket=CROP_BUCKET_CLASSIFIED)
                 per_image_obj_x.append(obj_count_x)
                 if has_valid_obj_x:
                     metadata_x = {
@@ -332,10 +332,10 @@ class LabelingPipeline:
                     self.mongo.insert_metadata(MONGO_COLLECTION, metadata_x)
                     stats_x["images"] += 1
                     stats_x["objects"] += len(mongo_labels_x)
-                    class_counts_x[class_id] += 1  # <--- Đếm theo class YOLOv8x
+                    class_counts_x[class_id] += 1
 
                 # --- Thêm bước trực quan hóa so sánh ---
-                # visualize_compare(img, detections_n, detections_x, img_name)  # <-- Bỏ dòng này nếu không muốn lưu từng ảnh
+                # visualize_compare(img, detections_n, detections_x, img_name)
 
             else:
                 # Single YOLO
@@ -347,7 +347,7 @@ class LabelingPipeline:
                 base_name = os.path.splitext(os.path.basename(img_name))[0]
                 txt_path = os.path.join(LABEL_OUTPUT_DIR, base_name + ".txt")
 
-                mongo_labels = [] # List chứa các object để up lên Mongo
+                mongo_labels = []
                 has_valid_obj = False
 
                 with open(txt_path, "w") as f:
@@ -374,6 +374,12 @@ class LabelingPipeline:
                             "confidence": float(conf)
                         })
                         has_valid_obj = True
+                        # --- Lưu crop vào bucket mới ---
+                        crop = img[int(y1):int(y2), int(x1):int(x2)]
+                        crop_name = f"{base_name}_{idx}.jpg"
+                        _, encoded = cv2.imencode('.jpg', crop)
+                        crop_path = f"class_{class_id}/{crop_name}"
+                        self.minio.upload_image(crop_path, encoded.tobytes(), bucket=CROP_BUCKET_CLASSIFIED)
 
                 if has_valid_obj:
                     metadata = {
@@ -384,8 +390,8 @@ class LabelingPipeline:
                         "object_count": len(mongo_labels),
                         "created_at": datetime.now(),
                         "pipeline_stage": "auto_labeling",
-                        "model": "yolov8n",  # <--- Thêm trường này (giả định dùng yolov8n.pt)
-                        "trained_by": "yolov8n.pt"  # <--- Thêm trường này
+                        "model": "yolov8n",
+                        "trained_by": "yolov8n.pt"
                     }
                     self.mongo.insert_metadata(MONGO_COLLECTION, metadata)
                     count_success += 1

@@ -6,6 +6,9 @@ import numpy as np
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 
+# --- FIX: Ensure project root is in sys.path for imports ---
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 # Import MinIO
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils.database import MinIOClient

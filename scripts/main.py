@@ -4,7 +4,9 @@ Optimized Data Cleaning Pipeline
 - Processed images: Process in-memory, save to MinIO
 - Local storage: Only for temporary processing
 """
+import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import cv2
 import numpy as np
 import hashlib
@@ -138,16 +140,12 @@ class DataCleaningPipeline:
                 # --- FILTER: File size ---
                 if len(data) / 1024 < MIN_SIZE_KB:
                     stats['deleted_small'] += 1
-                    # Optionally delete from MinIO
-                    # self.minio.delete_image(img_name)
                     continue
                 
                 # --- FILTER: Duplicates ---
                 img_hash = self._get_hash(data)
                 if img_hash in self.hashes:
                     stats['deleted_duplicate'] += 1
-                    # Optionally delete from MinIO
-                    # self.minio.delete_image(img_name)
                     continue
                 self.hashes.add(img_hash)
                 
@@ -245,7 +243,7 @@ class DataCleaningPipeline:
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Data Cleaning Pipeline")
     parser.add_argument(
         "--no-save-processed", 
@@ -257,10 +255,16 @@ if __name__ == "__main__":
         action="store_true",
         help="Dùng 2 model YOLO để detect & phân loại song song"
     )
-    args = parser.parse_args()
-    
-    pipeline = DataCleaningPipeline(
-        save_processed_to_minio=not args.no_save_processed,
-        dual_yolo_classify=args.dual_yolo_classify
+    parser.add_argument(
+        "--auto", action="store_true", help="Chạy tự động toàn bộ pipeline"
     )
-    pipeline.run()
+    args = parser.parse_args()
+
+    if args.auto:
+        auto_run_pipeline()
+    else:
+        pipeline = DataCleaningPipeline(
+            save_processed_to_minio=not args.no_save_processed,
+            dual_yolo_classify=args.dual_yolo_classify
+        )
+        pipeline.run()

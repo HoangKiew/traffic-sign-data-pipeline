@@ -4,6 +4,7 @@ from pymongo.errors import BulkWriteError, ConnectionFailure
 import io
 import os
 import time
+import logging
 from functools import wraps
 from typing import List, Dict, Any, Optional
 from config.config import (

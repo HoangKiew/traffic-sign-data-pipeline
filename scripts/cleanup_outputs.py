@@ -23,52 +23,56 @@ def cleanup_minio_and_mongo(delete_minio=True, delete_mongo=True):
                 name = bucket.name
                 if name == "traffic-signs-raw":
                     continue
-                print(f"🗑️ Đang xóa toàn bộ file trong bucket: {name}")
-                objects = list(minio.client.list_objects(name))
-                for obj in objects:
-                    minio.client.remove_object(name, obj.object_name)
-        except Exception as e:
-            print(f"⚠️ Lỗi xóa MinIO: {e}")
+                while True:
+                    objects = list(minio.client.list_objects(name, recursive=True))
+                    if not objects:
+                        break
+                    for obj in objects:
+                        minio.client.remove_object(name, obj.object_name)
+                minio.client.remove_bucket(name)
+        except Exception:
+            pass
 
     if delete_mongo:
         try:
             from utils.database import MongoDBClient
             mongo = MongoDBClient()
             db = mongo.db
-            print(f"🗑️ Đang xóa toàn bộ dữ liệu MongoDB trong database: {db.name}")
             for col_name in db.list_collection_names():
-                result = db[col_name].delete_many({})
-                print(f"   - Đã xóa {result.deleted_count} documents ở collection '{col_name}'")
-        except Exception as e:
-            print(f"⚠️ Lỗi xóa MongoDB: {e}")
+                db[col_name].delete_many({})
+        except Exception:
+            pass
 
 def cleanup_folders(folders):
     for folder in folders:
         safe_remove(folder)
-    print("✅ Đã xóa các thư mục được chọn.")
 
 def main():
+    # Danh sách các thư mục không chứa code cần xóa (ẩn hết, không in ra)
+    folders = [
+        "outputs",
+        "output",
+        "output_dataset",
+        "analytics_charts",
+        "compare_results",
+        "sample_images",
+        "downloads",
+        "datasets",
+        "logs",
+        "temp_crawl",
+        "minio_data",
+        "mongo_data",
+        "checkpoints"
+    ]
+
+    # Không in ra bất kỳ thông báo nào khi xóa
     print("Chọn kiểu xóa dữ liệu:")
-    print("  1. Xóa các thư mục kết quả (labels, logs, output, ...}")
+    print("  1. Xóa toàn bộ thư mục không chứa code (output, datasets, logs, ...)")
     print("  2. Xóa dữ liệu MinIO (trừ traffic-signs-raw)")
     print("  3. Xóa dữ liệu MongoDB")
     print("  4. Xóa cả MinIO và MongoDB")
     print("  5. Xóa tất cả (thư mục + MinIO + MongoDB)")
     choice = input("Nhập lựa chọn (1-5): ").strip()
-
-    folders = [
-        "datasets/labels",
-        "datasets/labels_n",
-        "datasets/labels_x",
-        "compare_results",
-        "analytics_charts",
-        "sample_images",
-        "downloads",
-        "output",
-        "output_dataset",
-        "temp_crawl",
-        "logs"
-    ]
 
     if choice == "1":
         cleanup_folders(folders)
@@ -81,8 +85,7 @@ def main():
     elif choice == "5":
         cleanup_folders(folders)
         cleanup_minio_and_mongo(delete_minio=True, delete_mongo=True)
-    else:
-        print("Không hợp lệ. Vui lòng chọn từ 1 đến 5.")
+    # Không in ra gì cả
 
 if __name__ == "__main__":
     main()
